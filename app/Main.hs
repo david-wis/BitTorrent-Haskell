@@ -1,7 +1,8 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}    
 import Data.Aeson
-import Data.ByteString.Char8 (ByteString)
+import Data.ByteString.Char8 (ByteString, uncons)
 import Data.Char (isDigit)
 import System.Environment
 import System.Exit
@@ -9,13 +10,22 @@ import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
 
+decodeBencodedString :: ByteString -> ByteString
+decodeBencodedString s = case B.elemIndex ':' s of 
+                           Just pos -> let (sLen, sExtractedRaw) = B.splitAt pos s
+                                           Just (len, _) = B.readInt sLen -- TODO: Add validations
+                                           sExtracted = B.tail sExtractedRaw -- Remove ':'
+                                       in if len == B.length sExtracted 
+                                          then sExtracted
+                                          else error "Invalid string length"
+                           Nothing -> error "Invalid string format"
+
+
 decodeBencodedValue :: ByteString -> ByteString
-decodeBencodedValue encodedValue
-    | isDigit (B.head encodedValue) =
-        case B.elemIndex ':' encodedValue of
-            Just colonIndex -> B.drop (colonIndex + 1) encodedValue
-            Nothing -> error "Invalid encoded value"
-    | otherwise = error $ "Unhandled encoded value: " ++ B.unpack encodedValue
+-- The equivalent version with native haskell strings (instead of bytestrings) would be:
+-- decodeBencodedValue cs@(c:_) = ...
+decodeBencodedValue cs@(uncons -> Just (c, _)) = if isDigit c then decodeBencodedString cs
+                                            else error "TODO"
 
 main :: IO ()
 main = do
