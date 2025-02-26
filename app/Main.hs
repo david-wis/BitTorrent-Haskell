@@ -2,7 +2,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}    
 import Data.Aeson
-import Data.ByteString.Char8 (ByteString, uncons)
+import Data.ByteString.Char8 (ByteString, uncons, unsnoc)
 import Data.Char (isDigit)
 import System.Environment
 import System.Exit
@@ -20,12 +20,18 @@ decodeBencodedString s = case B.elemIndex ':' s of
                                           else error "Invalid string length"
                            Nothing -> error "Invalid string format"
 
+decodeBencodedInt :: ByteString -> ByteString
+decodeBencodedInt (uncons -> Just ('i', unsnoc -> Just (sNum, 'e'))) = sNum
+decodeBencodedInt _ = error "Invalid Int format"
+
+
 
 decodeBencodedValue :: ByteString -> ByteString
 -- The equivalent version with native haskell strings (instead of bytestrings) would be:
 -- decodeBencodedValue cs@(c:_) = ...
+decodeBencodedValue cs@(uncons -> Just ('i', _)) = decodeBencodedInt cs
 decodeBencodedValue cs@(uncons -> Just (c, _)) = if isDigit c then decodeBencodedString cs
-                                            else error "TODO"
+                                                 else error "TODO"
 
 main :: IO ()
 main = do
@@ -47,8 +53,8 @@ main = do
             -- hPutStrLn stderr "Logs from your program will appear here!"
             -- Uncomment this block to pass stage 1
             let encodedValue = args !! 1
-            let decodedValue = decodeBencodedValue(B.pack encodedValue)
-            let jsonValue = encode(B.unpack decodedValue)
+            let decodedValue = decodeBencodedValue $ B.pack encodedValue
+            let jsonValue = encode $ B.unpack decodedValue
             LB.putStr jsonValue
             putStr "\n"
         _ -> putStrLn $ "Unknown command: " ++ command
