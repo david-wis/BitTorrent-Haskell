@@ -2,7 +2,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}    
 import Data.Aeson
-import Data.ByteString.Char8 (ByteString, uncons, unsnoc)
+import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
 import Data.Char (isDigit)
 import System.Environment
 import System.Exit
@@ -16,7 +16,7 @@ decodeBencodedString s = case B.elemIndex ':' s of
                                            Just (len, _) = B.readInt sLen -- TODO: Add validations
                                            sExtracted = B.tail sExtractedRaw -- Remove ':'
                                        in if len == B.length sExtracted 
-                                          then sExtracted
+                                          then  snoc (cons '"' sExtracted) '"' -- TODO: Check if quotes should be removed
                                           else error "Invalid string length"
                            Nothing -> error "Invalid string format"
 
