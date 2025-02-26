@@ -34,7 +34,7 @@ main = do
     case command of
         "decode" -> do
             -- You can use print statements as follows for debugging, they'll be visible when running tests.
-            hPutStrLn stderr "Logs from your program will appear here!"
+            -- hPutStrLn stderr "Logs from your program will appear here!"
             -- Uncomment this block to pass stage 1
             let encodedValue = args !! 1
             let decodedValue = decodeBencodedValue(B.pack encodedValue)
