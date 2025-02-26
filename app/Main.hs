@@ -2,6 +2,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}    
 import Data.Aeson
+import Data.List (intercalate)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
 import Data.Char (isDigit)
 import System.Environment
@@ -11,13 +12,15 @@ import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
 
 
-data BencodeElem = BencodeArray [BencodeElem] | BencodeString String | BencodeInt Int
+-- Warning: dict keys should always be Strings
+data BencodeElem = BencodeDict [(BencodeElem, BencodeElem)] | BencodeArray [BencodeElem] | BencodeString String | BencodeInt Int
 
 -- Make BencodeElem showable
 instance Show BencodeElem where
     show (BencodeArray elems) = show elems
     show (BencodeString s) = show s
     show (BencodeInt i) = show i
+    show (BencodeDict elems) = "{" ++ (intercalate ", " $ map (\(k, v) -> show k ++ ": " ++ show v) elems) ++ "}"
 
 
 decodeBencodedString :: ByteString -> (BencodeElem, ByteString)
@@ -46,13 +49,24 @@ decodeBencodedList (uncons -> Just ('l', sList)) = let (elems, sRemaining) = dec
                                                    in (BencodeArray elems, sRemaining)
 
 
+decodeBencodedDict :: ByteString -> (BencodeElem, ByteString)
+decodeBencodedDict (uncons -> Just ('d', sList)) = let (elems, sRemaining) = decodeBencodedListRecursive sList
+                                                       groupedElems = groupPairs elems
+                                                   in (BencodeDict groupedElems, sRemaining)
+                                                 where groupPairs [] = []
+                                                       groupPairs (e1@(BencodeString _):e2:es) = (e1,e2) : groupPairs es
+                                                       groupPairs _ = error "Wrong dict parity or Key is not String"
+
+
 decodeBencodedValue :: ByteString -> (BencodeElem, ByteString)
 -- The equivalent version with native haskell strings (instead of bytestrings) would be:
 -- decodeBencodedValue cs@(c:_) = ...
-decodeBencodedValue cs@(uncons -> Just ('l', _)) = decodeBencodedList cs
-decodeBencodedValue cs@(uncons -> Just ('i', _)) = decodeBencodedInt cs
-decodeBencodedValue cs@(uncons -> Just (c, _)) = if isDigit c then decodeBencodedString cs
-                                                 else error "TODO"
+decodeBencodedValue cs@(uncons -> Just (c, _)) = case c of 
+                                                    'l' -> decodeBencodedList cs
+                                                    'd' -> decodeBencodedDict cs
+                                                    'i' -> decodeBencodedInt cs
+                                                    _ -> if isDigit c then decodeBencodedString cs
+                                                         else error "TODO"
 
 main :: IO ()
 main = do
