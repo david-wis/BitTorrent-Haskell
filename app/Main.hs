@@ -2,71 +2,57 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}    
 import Data.Aeson
-import Data.List (intercalate)
+import Data.List (intercalate, find)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
 import Data.Char (isDigit)
 import System.Environment
 import System.Exit
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
-import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
+import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
+import Parser ( decodeBencodedValue, BencodeElem(BencodeDict), bReadString, bReadInt )
+
+data TorrentInfo = TorrentInfo {
+    len :: Int,
+    name :: String,
+    pieceLength :: Int,
+    pieces :: String
+}
+
+data TorrentFile = TorrentFile {
+    announce :: String,
+    info :: TorrentInfo
+} 
+
+instance Show TorrentInfo where
+    show (TorrentInfo len name pieceLength pieces) = "TorrentInfo { len = " ++ show len ++ ", name = " ++ show name ++ ", pieceLength = " ++ show pieceLength ++ ", pieces = " ++ show pieces ++ " }"
 
 
--- Warning: dict keys should always be Strings
-data BencodeElem = BencodeDict [(BencodeElem, BencodeElem)] | BencodeArray [BencodeElem] | BencodeString String | BencodeInt Int
-
--- Make BencodeElem showable
-instance Show BencodeElem where
-    show (BencodeArray elems) = show elems
-    show (BencodeString s) = show s
-    show (BencodeInt i) = show i
-    show (BencodeDict elems) = "{" ++ (intercalate ", " $ map (\(k, v) -> show k ++ ": " ++ show v) elems) ++ "}"
+instance Show TorrentFile where
+    show (TorrentFile announce info) = "TorrentFile { announce = " ++ show announce ++ ", info = " ++ show info ++ " }"
 
 
-decodeBencodedString :: ByteString -> (BencodeElem, ByteString)
-decodeBencodedString s = case B.elemIndex ':' s of 
-                           Just pos -> let (sLen, sRemainingRaw) = B.splitAt pos s
-                                           Just (len, _) = B.readInt sLen -- TODO: Add validations
-                                           sRemaining = B.tail sRemainingRaw -- Remove ':'
-                                           (sExtracted, sReturn) = B.splitAt len sRemaining
-                                       in (BencodeString $ B.unpack sExtracted, sReturn) -- TODO: Check what happens if the length is wrong
-                           Nothing -> error "Invalid string format"
-
-decodeBencodedInt :: ByteString -> (BencodeElem, ByteString)
-decodeBencodedInt (uncons -> Just ('i', sNum)) = case B.readInt sNum of
-                                                      Just (n, uncons -> Just ('e', sReturn)) -> (BencodeInt n, sReturn)
-                                                      Nothing -> error "Invalid Int format" 
-decodeBencodedInt _ = error "Invalid Int format"
-
-decodeBencodedListRecursive :: ByteString -> ([BencodeElem], ByteString)
-decodeBencodedListRecursive (uncons -> Just ('e', sReturn)) = ([], sReturn)
-decodeBencodedListRecursive sList = let (elem, sRemaining) = decodeBencodedValue sList
-                                        (elems, sReturn) = decodeBencodedListRecursive sRemaining
-                                    in (elem:elems, sReturn)
-
-decodeBencodedList :: ByteString -> (BencodeElem, ByteString)
-decodeBencodedList (uncons -> Just ('l', sList)) = let (elems, sRemaining) = decodeBencodedListRecursive sList
-                                                   in (BencodeArray elems, sRemaining)
+getTorrentInfo :: BencodeElem -> Maybe TorrentInfo
+getTorrentInfo (BencodeDict kvs) = do
+                                      (_, len) <- find ((== "length") . fst) kvs
+                                      intLen <- bReadInt len
+                                      (_, name) <- find ((== "name") . fst) kvs 
+                                      strName <- bReadString name
+                                      (_, pieceLength) <- find ((== "piece length") . fst) kvs
+                                      intPieceLength <- bReadInt pieceLength
+                                      (_, pieces) <- find ((== "pieces") . fst) kvs 
+                                      strPieces <- bReadString pieces
+                                      return TorrentInfo { len = intLen, name = strName, pieceLength = intPieceLength, pieces = strPieces}
 
 
-decodeBencodedDict :: ByteString -> (BencodeElem, ByteString)
-decodeBencodedDict (uncons -> Just ('d', sList)) = let (elems, sRemaining) = decodeBencodedListRecursive sList
-                                                       groupedElems = groupPairs elems
-                                                   in (BencodeDict groupedElems, sRemaining)
-                                                 where groupPairs [] = []
-                                                       groupPairs (e1@(BencodeString _):e2:es) = (e1,e2) : groupPairs es
-                                                       groupPairs _ = error "Wrong dict parity or Key is not String"
+getTorrentFile :: BencodeElem -> Maybe TorrentFile
+getTorrentFile (BencodeDict kvs) = do 
+                                      (_, announce) <- find ((== "announce") . fst) kvs 
+                                      strAnnounce <- bReadString announce
+                                      (_, info) <- find ((== "info") . fst) kvs
+                                      tiInfo <- getTorrentInfo info
+                                      return TorrentFile { announce = strAnnounce, info = tiInfo }
 
-
-decodeBencodedValue :: ByteString -> (BencodeElem, ByteString)
--- The equivalent version with native haskell strings (instead of bytestrings) would be:
--- decodeBencodedValue cs@(c:_) = ...
-decodeBencodedValue cs@(uncons -> Just (c, _)) = case c of 
-                                                    'l' -> decodeBencodedList cs
-                                                    'd' -> decodeBencodedDict cs
-                                                    'i' -> decodeBencodedInt cs
-                                                    _ -> if isDigit c then decodeBencodedString cs
-                                                         else error "TODO"
 
 main :: IO ()
 main = do
@@ -83,12 +69,17 @@ main = do
 
     let command = args !! 0
     case command of
-        "decode" -> do
+        "decode" ->
             -- You can use print statements as follows for debugging, they'll be visible when running tests.
             -- hPutStrLn stderr "Logs from your program will appear here!"
             -- Uncomment this block to pass stage 1
             let encodedValue = args !! 1
-            let decodedValue = fst $ decodeBencodedValue $ B.pack encodedValue
-            -- let jsonValue = B.unpack decodedValue
-            putStrLn $ show decodedValue
+                decodedValue = fst $ decodeBencodedValue $ B.pack encodedValue
+            in putStrLn $ show decodedValue
+        "info" -> do
+            handle <- openFile (args !! 1) ReadMode
+            contents <- B.hGetContents handle
+            case (getTorrentFile $ fst $ decodeBencodedValue contents) of
+                Just tf -> putStrLn $ show tf
+                Nothing -> putStrLn "Invalid torrent file"
         _ -> putStrLn $ "Unknown command: " ++ command
