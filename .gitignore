@@ -2,3 +2,4 @@
 .stack/
 hs-bittorrent.cabal
 *~
+.vscode
