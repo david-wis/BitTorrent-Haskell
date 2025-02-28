@@ -10,7 +10,12 @@ import System.Exit
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
-import Parser ( decodeBencodedValue, BencodeElem(BencodeDict), bReadString, bReadInt )
+import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
+import Crypto.Hash.SHA1 ( hash, finalize )
+import qualified Crypto.Hash as H
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 data TorrentInfo = TorrentInfo {
     len :: Int,
@@ -21,7 +26,8 @@ data TorrentInfo = TorrentInfo {
 
 data TorrentFile = TorrentFile {
     announce :: String,
-    info :: TorrentInfo
+    info :: TorrentInfo,
+    infoHash :: ByteString
 } 
 
 instance Show TorrentInfo where
@@ -29,11 +35,11 @@ instance Show TorrentInfo where
 
 
 instance Show TorrentFile where
-    show (TorrentFile announce info) = "TorrentFile { announce = " ++ show announce ++ ", info = " ++ show info ++ " }"
+    show (TorrentFile announce info infoHash) = "TorrentFile { announce = " ++ show announce ++ ", info = " ++ show info ++ ", infoHash = " ++ B.unpack infoHash ++ " }"
 
 
-getTorrentInfo :: BencodeElem -> Maybe TorrentInfo
-getTorrentInfo (BencodeDict kvs) = do
+getTorrentInfo :: BencodedElem -> Maybe TorrentInfo
+getTorrentInfo (BencodedDict kvs) = do
                                       (_, len) <- find ((== "length") . fst) kvs
                                       intLen <- bReadInt len
                                       (_, name) <- find ((== "name") . fst) kvs 
@@ -45,13 +51,18 @@ getTorrentInfo (BencodeDict kvs) = do
                                       return TorrentInfo { len = intLen, name = strName, pieceLength = intPieceLength, pieces = strPieces}
 
 
-getTorrentFile :: BencodeElem -> Maybe TorrentFile
-getTorrentFile (BencodeDict kvs) = do 
+hashInfo :: BencodedElem -> ByteString
+hashInfo b = hash $ bencodeToByteString b
+
+getTorrentFile :: BencodedElem -> Maybe TorrentFile
+getTorrentFile (BencodedDict kvs) = do 
                                       (_, announce) <- find ((== "announce") . fst) kvs 
                                       strAnnounce <- bReadString announce
                                       (_, info) <- find ((== "info") . fst) kvs
                                       tiInfo <- getTorrentInfo info
-                                      return TorrentFile { announce = strAnnounce, info = tiInfo }
+                                      return TorrentFile { announce = strAnnounce, info = tiInfo, infoHash = hashInfo info }
+
+
 
 
 main :: IO ()
@@ -74,12 +85,22 @@ main = do
             -- hPutStrLn stderr "Logs from your program will appear here!"
             -- Uncomment this block to pass stage 1
             let encodedValue = args !! 1
-                decodedValue = fst $ decodeBencodedValue $ B.pack encodedValue
+                decodedValue = fst $ parseBencodedValue $ B.pack encodedValue
             in putStrLn $ show decodedValue
         "info" -> do
             handle <- openFile (args !! 1) ReadMode
             contents <- B.hGetContents handle
-            case (getTorrentFile $ fst $ decodeBencodedValue contents) of
-                Just tf -> putStrLn $ show tf
+            case (getTorrentFile $ fst $ parseBencodedValue contents) of
+                Just tf -> do
+                    putStrLn $ "Tracker URL: " ++ announce tf
+                    putStrLn $ "Length: " ++ (show $ len $ info tf)
+                    putStrLn $ "Info Hash: " ++ (T.unpack $ decodeUtf8 $ Base16.encode $ encodeUtf8 $ T.pack $ B.unpack $ infoHash tf)
+                    putStrLn $ show tf
                 Nothing -> putStrLn "Invalid torrent file"
+        "test" -> do
+            let (bencoded,_) = parseBencodedValue $ B.pack (args !! 1)
+            let hashed = (T.unpack $ decodeUtf8 $ Base16.encode $ encodeUtf8 $ T.pack $ B.unpack $ hashInfo bencoded)
+            putStrLn $ show bencoded
+            putStrLn $ show $ B.unpack $ bencodeToByteString bencoded
+            putStrLn $ show hashed
         _ -> putStrLn $ "Unknown command: " ++ command
