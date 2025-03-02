@@ -10,11 +10,12 @@ import System.Exit
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
-import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
 import Crypto.Hash.SHA1 ( hash )
 import qualified Data.ByteString.Base16 as Base16
-import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+
+import qualified Tracker as T
+import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
 
 data TorrentInfo = TorrentInfo {
     len :: Int,
@@ -100,6 +101,10 @@ main = do
                     putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
                     putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
                     putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentBytestring (pieces $ info tf) 20)
-                    print tf
+                    -- TODO: Randomize peerId
+                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = B.pack "00000000000000000000", T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = len $ info tf,  T.compact = 1 }
+                    rsp <- T.getPeers (announce tf) queryParams
+                    putStrLn $ rsp
+                    -- print tf
                 Nothing -> putStrLn "Invalid torrent file"
         _ -> do putStrLn "Invalid command"

@@ -13,9 +13,10 @@ license: BSD3
 dependencies:
   - base >= 4.7 && < 5
   - aeson # for JSON
+  - HTTP
+  - network # required when using bytestring
   - network-simple # establish a simple TCP network
   - bytestring # useful to send bytes over the network
-  - network # required when using bytestring
   - text # use Text rather than String
   - containers # may help with the database structure and debugging
   - time # may help with the expiry function
