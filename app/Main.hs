@@ -11,8 +11,7 @@ import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
-import Crypto.Hash.SHA1 ( hash, finalize )
-import qualified Crypto.Hash as H
+import Crypto.Hash.SHA1 ( hash )
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
@@ -35,7 +34,7 @@ instance Show TorrentInfo where
 
 
 instance Show TorrentFile where
-    show (TorrentFile announce info infoHash) = "TorrentFile { announce = " ++ show announce ++ ", info = " ++ show info ++ ", infoHash = " ++ B.unpack infoHash ++ " }"
+    show tf@(TorrentFile announce info infoHash) = "TorrentFile { announce = " ++ show announce ++ ", info = " ++ show info ++ ", infoHash = " ++  torrentFileToHexHash tf ++ "}"
 
 
 getTorrentInfo :: BencodedElem -> Maybe TorrentInfo
@@ -63,7 +62,8 @@ getTorrentFile (BencodedDict kvs) = do
                                       return TorrentFile { announce = strAnnounce, info = tiInfo, infoHash = hashInfo info }
 
 
-
+torrentFileToHexHash :: TorrentFile -> String
+torrentFileToHexHash tf = B.unpack $ Base16.encode $ infoHash tf
 
 main :: IO ()
 main = do
@@ -86,21 +86,15 @@ main = do
             -- Uncomment this block to pass stage 1
             let encodedValue = args !! 1
                 decodedValue = fst $ parseBencodedValue $ B.pack encodedValue
-            in putStrLn $ show decodedValue
+            in print decodedValue
         "info" -> do
             handle <- openFile (args !! 1) ReadMode
             contents <- B.hGetContents handle
-            case (getTorrentFile $ fst $ parseBencodedValue contents) of
+            case getTorrentFile $ fst $ parseBencodedValue contents of
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf
-                    putStrLn $ "Length: " ++ (show $ len $ info tf)
-                    putStrLn $ "Info Hash: " ++ (T.unpack $ decodeUtf8 $ Base16.encode $ encodeUtf8 $ T.pack $ B.unpack $ infoHash tf)
-                    putStrLn $ show tf
+                    putStrLn $ "Length: " ++ show (len $ info tf)
+                    putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
+                    print tf
                 Nothing -> putStrLn "Invalid torrent file"
-        "test" -> do
-            let (bencoded,_) = parseBencodedValue $ B.pack (args !! 1)
-            let hashed = (T.unpack $ decodeUtf8 $ Base16.encode $ encodeUtf8 $ T.pack $ B.unpack $ hashInfo bencoded)
-            putStrLn $ show bencoded
-            putStrLn $ show $ B.unpack $ bencodeToByteString bencoded
-            putStrLn $ show hashed
-        _ -> putStrLn $ "Unknown command: " ++ command
+        _ -> do putStrLn "Invalid command"
