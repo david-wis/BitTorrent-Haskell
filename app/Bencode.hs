@@ -22,7 +22,7 @@ import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
 
 
 -- Warning: dict keys should always be Strings
-data BencodedElem = BencodedDict [(String, BencodedElem)] | BencodedArray [BencodedElem] | BencodedString String | BencodedInt Int
+data BencodedElem = BencodedDict [(ByteString, BencodedElem)] | BencodedArray [BencodedElem] | BencodedString ByteString | BencodedInt Int
 
 -- Make BencodedElem showable
 instance Show BencodedElem where
@@ -38,7 +38,7 @@ parseBencodedString s = case B.elemIndex ':' s of
                                            Just (len, _) = B.readInt sLen -- TODO: Add validations
                                            sRemaining = B.tail sRemainingRaw -- Remove ':'
                                            (sExtracted, sReturn) = B.splitAt len sRemaining
-                                       in (BencodedString $ B.unpack sExtracted, sReturn) -- TODO: Check what happens if the length is wrong
+                                       in (BencodedString sExtracted, sReturn) -- TODO: Check what happens if the length is wrong
                            Nothing -> error "Invalid string format"
 
 parseBencodedInt :: ByteString -> (BencodedElem, ByteString)
@@ -79,7 +79,7 @@ parseBencodedValue cs@(uncons -> Just (c, _)) = case c of
 
 -- TODO: See if we should use an Exception Monad instead of Maybe
 
-bReadString :: BencodedElem -> Maybe String
+bReadString :: BencodedElem -> Maybe ByteString
 bReadString (BencodedString s) = Just s
 bReadString _ = Nothing
 
@@ -87,8 +87,8 @@ bReadInt :: BencodedElem -> Maybe Int
 bReadInt (BencodedInt i) = Just i
 bReadInt _ =  Nothing
 
-bencodeString :: String -> ByteString
-bencodeString s = B.pack $ show (length s) ++ ":" ++ s
+bencodeString :: ByteString -> ByteString
+bencodeString s = B.snoc (B.pack $ show $ B.length s) ':' `B.append` s
 
 bencodeToByteString :: BencodedElem -> ByteString
 bencodeToByteString (BencodedInt i) = B.pack $ "i" ++ show i ++ "e"

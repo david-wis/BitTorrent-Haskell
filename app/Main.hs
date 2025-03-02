@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}    
+{-# LANGUAGE OverloadedStrings #-}
 import Data.Aeson
 import Data.List (intercalate, find)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
@@ -20,17 +20,17 @@ data TorrentInfo = TorrentInfo {
     len :: Int,
     name :: String,
     pieceLength :: Int,
-    pieces :: String
+    pieces :: ByteString
 }
 
 data TorrentFile = TorrentFile {
     announce :: String,
     info :: TorrentInfo,
     infoHash :: ByteString
-} 
+}
 
 instance Show TorrentInfo where
-    show (TorrentInfo len name pieceLength pieces) = "TorrentInfo { len = " ++ show len ++ ", name = " ++ show name ++ ", pieceLength = " ++ show pieceLength ++ ", pieces = " ++ show pieces ++ " }"
+    show (TorrentInfo len name pieceLength pieces) = "TorrentInfo { len = " ++ show len ++ ", name = " ++ show name ++ ", pieceLength = " ++ show pieceLength ++ ", pieces = " ++ (B.unpack $ Base16.encode $ pieces) ++ " }"
 
 
 instance Show TorrentFile where
@@ -41,26 +41,29 @@ getTorrentInfo :: BencodedElem -> Maybe TorrentInfo
 getTorrentInfo (BencodedDict kvs) = do
                                       (_, len) <- find ((== "length") . fst) kvs
                                       intLen <- bReadInt len
-                                      (_, name) <- find ((== "name") . fst) kvs 
+                                      (_, name) <- find ((== "name") . fst) kvs
                                       strName <- bReadString name
                                       (_, pieceLength) <- find ((== "piece length") . fst) kvs
                                       intPieceLength <- bReadInt pieceLength
-                                      (_, pieces) <- find ((== "pieces") . fst) kvs 
+                                      (_, pieces) <- find ((== "pieces") . fst) kvs
                                       strPieces <- bReadString pieces
-                                      return TorrentInfo { len = intLen, name = strName, pieceLength = intPieceLength, pieces = strPieces}
+                                      return TorrentInfo { len = intLen, name = B.unpack strName, pieceLength = intPieceLength, pieces = strPieces}
 
 
 hashInfo :: BencodedElem -> ByteString
 hashInfo b = hash $ bencodeToByteString b
 
 getTorrentFile :: BencodedElem -> Maybe TorrentFile
-getTorrentFile (BencodedDict kvs) = do 
-                                      (_, announce) <- find ((== "announce") . fst) kvs 
+getTorrentFile (BencodedDict kvs) = do
+                                      (_, announce) <- find ((== "announce") . fst) kvs
                                       strAnnounce <- bReadString announce
                                       (_, info) <- find ((== "info") . fst) kvs
                                       tiInfo <- getTorrentInfo info
-                                      return TorrentFile { announce = strAnnounce, info = tiInfo, infoHash = hashInfo info }
+                                      return TorrentFile { announce = B.unpack strAnnounce, info = tiInfo, infoHash = hashInfo info }
 
+segmentBytestring :: ByteString  -> Int -> [ByteString]
+segmentBytestring (B.uncons -> Nothing) n = []
+segmentBytestring bs n = B.take n bs : segmentBytestring (B.drop n bs) n
 
 torrentFileToHexHash :: TorrentFile -> String
 torrentFileToHexHash tf = B.unpack $ Base16.encode $ infoHash tf
@@ -73,7 +76,7 @@ main = do
 
     args <- getArgs
     if length args < 2
-        then do 
+        then do
             putStrLn "Usage: your_bittorrent.sh <command> <args>"
             exitWith (ExitFailure 1)
         else return ()
@@ -95,6 +98,8 @@ main = do
                     putStrLn $ "Tracker URL: " ++ announce tf
                     putStrLn $ "Length: " ++ show (len $ info tf)
                     putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
+                    putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
+                    putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentBytestring (pieces $ info tf) 20)
                     print tf
                 Nothing -> putStrLn "Invalid torrent file"
         _ -> do putStrLn "Invalid command"
