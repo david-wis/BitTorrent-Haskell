@@ -16,7 +16,7 @@ import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
-
+import Utils ( segmentBytestring )
 data TorrentInfo = TorrentInfo {
     len :: Int,
     name :: String,
@@ -61,10 +61,6 @@ getTorrentFile (BencodedDict kvs) = do
                                       (_, info) <- find ((== "info") . fst) kvs
                                       tiInfo <- getTorrentInfo info
                                       return TorrentFile { announce = B.unpack strAnnounce, info = tiInfo, infoHash = hashInfo info }
-
-segmentBytestring :: ByteString  -> Int -> [ByteString]
-segmentBytestring (B.uncons -> Nothing) n = []
-segmentBytestring bs n = B.take n bs : segmentBytestring (B.drop n bs) n
 
 torrentFileToHexHash :: TorrentFile -> String
 torrentFileToHexHash tf = B.unpack $ Base16.encode $ infoHash tf
