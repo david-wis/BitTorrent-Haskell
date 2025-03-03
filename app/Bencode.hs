@@ -7,11 +7,12 @@ module Bencode (
     parseBencodedValue,
     bReadInt,
     bReadString,
-    bencodeToByteString
+    bencodeToByteString,
+    bencodeGetValue
 ) where
 
 import Data.Aeson
-import Data.List (intercalate)
+import Data.List (intercalate, find)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
 import Data.Char (isDigit)
 import System.Environment
@@ -98,3 +99,6 @@ bencodeToByteString (BencodedArray bes) = ('l' `cons` bytestringArray) `snoc` 'e
 bencodeToByteString (BencodedDict kvs) = ('d' `cons` bytestringDict) `snoc` 'e'
                                       where bytestringDict = foldr (\(k,v) bs -> B.append (bencodeString k) (B.append (bencodeToByteString v) bs)) B.empty kvs
 
+bencodeGetValue :: BencodedElem -> ByteString -> Maybe BencodedElem
+bencodeGetValue (BencodedDict kvs) k = fmap snd (find ((== k) . fst) kvs)
+bencodeGetValue _ _ = Nothing

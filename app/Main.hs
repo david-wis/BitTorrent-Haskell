@@ -15,7 +15,7 @@ import qualified Data.ByteString.Base16 as Base16
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 import qualified Tracker as T
-import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString)
+import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 import Utils ( segmentBytestring )
 data TorrentInfo = TorrentInfo {
     len :: Int,
@@ -39,28 +39,30 @@ instance Show TorrentFile where
 
 
 getTorrentInfo :: BencodedElem -> Maybe TorrentInfo
-getTorrentInfo (BencodedDict kvs) = do
-                                      (_, len) <- find ((== "length") . fst) kvs
+getTorrentInfo bed@(BencodedDict _) = do
+                                      len <- bencodeGetValue bed "length"
                                       intLen <- bReadInt len
-                                      (_, name) <- find ((== "name") . fst) kvs
+                                      name <- bencodeGetValue bed "name"
                                       strName <- bReadString name
-                                      (_, pieceLength) <- find ((== "piece length") . fst) kvs
+                                      pieceLength <- bencodeGetValue bed "piece length"
                                       intPieceLength <- bReadInt pieceLength
-                                      (_, pieces) <- find ((== "pieces") . fst) kvs
+                                      pieces <- bencodeGetValue bed "pieces" 
                                       strPieces <- bReadString pieces
                                       return TorrentInfo { len = intLen, name = B.unpack strName, pieceLength = intPieceLength, pieces = strPieces}
+getTorrentInfo _ = error "Bencode elem is not a dictionary"
 
 
 hashInfo :: BencodedElem -> ByteString
 hashInfo b = hash $ bencodeToByteString b
 
 getTorrentFile :: BencodedElem -> Maybe TorrentFile
-getTorrentFile (BencodedDict kvs) = do
-                                      (_, announce) <- find ((== "announce") . fst) kvs
+getTorrentFile bed@(BencodedDict _) = do
+                                      announce <- bencodeGetValue bed "announce" 
                                       strAnnounce <- bReadString announce
-                                      (_, info) <- find ((== "info") . fst) kvs
+                                      info <- bencodeGetValue bed "info" 
                                       tiInfo <- getTorrentInfo info
                                       return TorrentFile { announce = B.unpack strAnnounce, info = tiInfo, infoHash = hashInfo info }
+getTorrentFile _ = error "Bencode elem is not a dictionary"
 
 torrentFileToHexHash :: TorrentFile -> String
 torrentFileToHexHash tf = B.unpack $ Base16.encode $ infoHash tf
