@@ -17,7 +17,7 @@ import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 import Utils ( segmentBytestring )
-import Peer (handshake)
+import Peer (connectToPeer)
 import System.Entropy (getEntropy)
 
 data TorrentInfo = TorrentInfo {
@@ -95,7 +95,7 @@ main = do
         "info" -> do
             handle <- openFile (args !! 1) ReadMode
             contents <- B.hGetContents handle
-            clientPeerId  <- getEntropy 20
+            selfPid  <- getEntropy 20
             case getTorrentFile $ fst $ parseBencodedValue contents of
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf
@@ -103,11 +103,11 @@ main = do
                     putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
                     putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
                     putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentBytestring (pieces $ info tf) 20)
-                    -- TODO: Randomize peerId
-                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = clientPeerId, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = len $ info tf,  T.compact = 1 }
+                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = len $ info tf,  T.compact = 1 }
                     trackerInfo <- T.getPeers (announce tf) queryParams
-                    rsp <- handshake (head $ T.peers trackerInfo) (infoHash tf) clientPeerId
-                    putStrLn $ "Peer id: " ++ B.unpack (Base16.encode rsp)
+                    putStrLn $  "First Address: " ++ show (head $ T.peers trackerInfo)
+                    connectToPeer (head $ T.peers trackerInfo) (infoHash tf) selfPid
+                    -- putStrLn $ "Peer id: " ++ B.unpack (Base16.encode rsp)
                     -- print tf
                 Nothing -> putStrLn "Invalid torrent file"
         _ -> do putStrLn "Invalid command"

@@ -21,13 +21,12 @@ import Data.ByteString.Char8 (ByteString)
 import Data.List (intercalate, find)
 import qualified Data.ByteString.Char8 as B
 import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
-import Data.Bits (shiftL)
 
 import qualified Data.ByteString.Base16 as Base16
 
 
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadInt, bReadString, bencodeGetValue )
-import Utils (segmentBytestring, Address (Address))
+import Utils (segmentBytestring, Address (Address), readBytesAsInt)
 
 data TrackerQueryParams = TrackerQueryParams {
     infoHash :: ByteString,
@@ -52,8 +51,8 @@ instance Show TrackerResponse where
 
 parseAddress :: ByteString -> Address
 parseAddress bs = let (ip, port) = B.splitAt 4 bs
-                      (B.uncons -> Just (highPort, B.uncons -> Just (lowPort, _))) = port
-                  in Address (intercalate "." $ map (show . fromEnum) $ B.unpack ip) (show $  fromEnum highPort `shiftL` 8 + fromEnum lowPort)
+                      (intPort, B.uncons -> Nothing) = readBytesAsInt port 2
+                  in Address (intercalate "." $ map (show . fromEnum) $ B.unpack ip) (show intPort)
 
 buildTrackerResponse :: BencodedElem -> Maybe TrackerResponse
 buildTrackerResponse bed@(BencodedDict _) = do
