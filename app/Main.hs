@@ -17,6 +17,9 @@ import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 import Utils ( segmentBytestring )
+import Peer (handshake)
+import System.Entropy (getEntropy)
+
 data TorrentInfo = TorrentInfo {
     len :: Int,
     name :: String,
@@ -46,7 +49,7 @@ getTorrentInfo bed@(BencodedDict _) = do
                                       strName <- bReadString name
                                       pieceLength <- bencodeGetValue bed "piece length"
                                       intPieceLength <- bReadInt pieceLength
-                                      pieces <- bencodeGetValue bed "pieces" 
+                                      pieces <- bencodeGetValue bed "pieces"
                                       strPieces <- bReadString pieces
                                       return TorrentInfo { len = intLen, name = B.unpack strName, pieceLength = intPieceLength, pieces = strPieces}
 getTorrentInfo _ = error "Bencode elem is not a dictionary"
@@ -57,9 +60,9 @@ hashInfo b = hash $ bencodeToByteString b
 
 getTorrentFile :: BencodedElem -> Maybe TorrentFile
 getTorrentFile bed@(BencodedDict _) = do
-                                      announce <- bencodeGetValue bed "announce" 
+                                      announce <- bencodeGetValue bed "announce"
                                       strAnnounce <- bReadString announce
-                                      info <- bencodeGetValue bed "info" 
+                                      info <- bencodeGetValue bed "info"
                                       tiInfo <- getTorrentInfo info
                                       return TorrentFile { announce = B.unpack strAnnounce, info = tiInfo, infoHash = hashInfo info }
 getTorrentFile _ = error "Bencode elem is not a dictionary"
@@ -92,6 +95,7 @@ main = do
         "info" -> do
             handle <- openFile (args !! 1) ReadMode
             contents <- B.hGetContents handle
+            clientPeerId  <- getEntropy 20
             case getTorrentFile $ fst $ parseBencodedValue contents of
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf
@@ -100,9 +104,10 @@ main = do
                     putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
                     putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentBytestring (pieces $ info tf) 20)
                     -- TODO: Randomize peerId
-                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = B.pack "00000000000000000000", T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = len $ info tf,  T.compact = 1 }
-                    rsp <- T.getPeers (announce tf) queryParams
-                    putStrLn $ rsp
+                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = clientPeerId, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = len $ info tf,  T.compact = 1 }
+                    trackerInfo <- T.getPeers (announce tf) queryParams
+                    rsp <- handshake (head $ T.peers trackerInfo) (infoHash tf) clientPeerId
+                    putStrLn $ "Peer id: " ++ B.unpack (Base16.encode rsp)
                     -- print tf
                 Nothing -> putStrLn "Invalid torrent file"
         _ -> do putStrLn "Invalid command"

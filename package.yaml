@@ -30,6 +30,7 @@ dependencies:
   - attoparsec
   - cryptohash
   - base16-bytestring
+  - entropy
 
 executables:
   hs-bittorrent-exe:
