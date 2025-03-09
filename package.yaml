@@ -31,6 +31,7 @@ dependencies:
   - cryptohash
   - base16-bytestring
   - entropy
+  - binary
 
 executables:
   hs-bittorrent-exe:

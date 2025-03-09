@@ -7,14 +7,27 @@ module Peer (
 ) where
 
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Char8 (ByteString)
+import Data.Word (Word8)
+import Data.Int (Int32)
 import Utils (Address (Address), PeerId, Hash, readBytesAsInt)
 import Network.Simple.TCP
-import Data.ByteString.Base16 (encode)
+import Data.ByteString.Base16 (encode) -- TODO: Use with qualified
+import qualified Data.Binary as Bin
 
-type MessageId = Int
-unchokeMessageId = 1
-bitFieldMessageId = 5
+import Torrent (TorrentFile,  infoHash, pieceLength, info)
+
+type MessageId = Char
+
+unchokeMessageId :: MessageId
+unchokeMessageId = '\1'
+
+interestMessageId :: MessageId
+interestMessageId = '\2'
+
+bitFieldMessageId :: MessageId
+bitFieldMessageId = '\5'
 
 -- Start Constants
 handshakePrefix :: ByteString
@@ -34,19 +47,24 @@ hashLength = 20
 
 peerIdLength :: Int
 peerIdLength = 20
+
+blockSize :: Int
+blockSize = 16384 -- 16 KiB
 -- End Constants
 
-connectToPeer :: Address -> Hash -> PeerId -> IO ()
-connectToPeer (Address ip port) hash selfPid = connect ip port (handlePeerConnection hash selfPid)
+connectToPeer :: Address -> TorrentFile -> PeerId -> IO ()
+connectToPeer (Address ip port) tf selfPid = connect ip port (handlePeerConnection tf selfPid)
 
 
-handlePeerConnection :: Hash -> PeerId -> (Socket, SockAddr) -> IO ()
-handlePeerConnection hash selfPid (sock, addr) = do 
-                                                    peerId <- handleHandshake hash selfPid sock
+handlePeerConnection :: TorrentFile -> PeerId -> (Socket, SockAddr) -> IO ()
+handlePeerConnection tf selfPid (sock, addr) = do 
+                                                    peerId <- handleHandshake (infoHash tf) selfPid sock
                                                     putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (encode peerId)
                                                     handleBitField sock
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
+                                                    let size = pieceLength $ info tf
+                                                    let blocks = size `div` blockSize
                                                     return ()
 
 
@@ -73,7 +91,7 @@ readPeerMessage sock = do
                                           let (msgLen, msgIdBs) = readBytesAsInt bs 4
                                           putStrLn $ B.unpack $ encode bs
                                           putStrLn $ show msgLen
-                                          let msgId = fromEnum $ B.head msgIdBs
+                                          let msgId = B.head msgIdBs
                                           if msgLen == 0 
                                               then return (msgId, B.empty)
                                               else do
@@ -83,6 +101,9 @@ readPeerMessage sock = do
                                                         Nothing -> error "Invalid Message"
                             Nothing -> error "Invalid message" -- TODO: Handle this better
 
+sendPeerMessage :: Socket -> ByteString -> MessageId -> IO ()
+sendPeerMessage sock payload msgId = let size = (fromIntegral $ B.length payload + 1) :: Int32
+                                     in send sock $ ((LB.toStrict $ Bin.encode size) `B.snoc` msgId) `B.append` payload --TODO check if payload is greater than int32? 
 
 handleBitField :: Socket -> IO ByteString -- TODO: Think if the available pieces should be parsed
 handleBitField sock = do
@@ -91,7 +112,7 @@ handleBitField sock = do
                                   else error "Expected BitField message")
 
 sendInterestedMessage :: Socket -> IO ()
-sendInterestedMessage sock = send sock "\0\0\0\0\2"
+sendInterestedMessage sock = sendPeerMessage sock B.empty interestMessageId
 
 
 handleUnchoke :: Socket -> IO ()
@@ -100,3 +121,9 @@ handleUnchoke sock = do
                       if msgId == unchokeMessageId
                         then return ()
                         else error "Expected BitField message"
+
+
+-- downloadBlock :: Socket -> Int -> IO ByteString
+-- downloadBlock sock index = do
+--                              send sock 
+                            
