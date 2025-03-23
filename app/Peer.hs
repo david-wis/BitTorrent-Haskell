@@ -11,11 +11,11 @@ import Data.ByteString.Char8 (ByteString)
 import Data.Word (Word8)
 import Data.Int (Int32)
 import Utils (Address (Address), PeerId, Hash, readBytesAsInt)
-import Network.Simple.TCP 
+import Network.Simple.TCP
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import qualified Data.Binary as Bin
 
-import Torrent (TorrentFile,  infoHash, pieceLength, info)
+import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces)
 import System.IO
 
 type MessageId = Char
@@ -68,12 +68,13 @@ handlePeerConnection tf selfPid (sock, addr) = do
                                                     peerId <- handleHandshake (infoHash tf) selfPid sock
                                                     putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
                                                     handleBitField sock
-                                                    sendInterestedMessage sock  
+                                                    sendInterestedMessage sock
                                                     handleUnchoke sock
                                                     let size = pieceLength $ info tf
                                                     print $ "Piece size is: " ++ show size
-                                                    piece <- downloadPiece sock size 0
-                                                    print piece
+                                                    let piecesQty = B.length (pieces $ info tf) `div` 20
+                                                    pieceList <- sequence [ downloadPiece sock size pieceIdx | pieceIdx <- [0..piecesQty-1]]
+                                                    print $ B.concat pieceList
                                                     return ()
 
 
@@ -98,7 +99,7 @@ readUntilLength sock n = do
                             case maybeRsp of
                               Just rsp -> let rspLen = B.length rsp
                                               remainingLen = n - rspLen
-                                          in if remainingLen > 0 then do 
+                                          in if remainingLen > 0 then do
                                                                         remaining <- readUntilLength sock remainingLen
                                                                         return (rsp `B.append` remaining)
                                                              else return rsp
@@ -147,7 +148,7 @@ handleUnchoke sock = do
 
 downloadBlock :: Socket -> Int -> Int -> Int -> IO ByteString
 downloadBlock sock pieceIndex blockIndex blockLength = do
-                                                          print $ "Downloading block " ++ show blockIndex ++ " offset: " ++ show blockIndex ++ " of piece: " ++ show pieceIndex
+                                                          print $ "Downloading block " ++ show blockIndex ++ " offset: " ++ show (blockIndex * blockSize) ++ " of piece: " ++ show pieceIndex
                                                           let msg = foldr (\n bs ->  LB.toStrict (Bin.encode (fromIntegral n :: Int32)) `B.append` bs) B.empty [pieceIndex, blockIndex * blockSize, blockLength]
                                                           -- print $ B16.encode msg
                                                           sendPeerMessage sock msg requestMessageId
@@ -155,7 +156,7 @@ downloadBlock sock pieceIndex blockIndex blockLength = do
                                                           (msgId, block) <- readPeerMessage sock
                                                           print $ "Read bytes: " ++ (show $ B.length block)
                                                           if msgId == pieceMessageId then return block
-                                                                                     else 
+                                                                                     else
                                                                                            do
                                                                                              print $ "Mira que loco, otro id: " ++ show msgId
                                                                                              return B.empty -- TODO: Handle this better
