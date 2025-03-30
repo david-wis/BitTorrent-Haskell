@@ -15,7 +15,7 @@ import Network.Simple.TCP
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import qualified Data.Binary as Bin
 
-import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces)
+import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize)
 import System.IO
 
 type MessageId = Char
@@ -70,13 +70,7 @@ handlePeerConnection tf selfPid (sock, addr) = do
                                                     handleBitField sock
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
-                                                    let size = pieceLength $ info tf
-                                                    let piecesQty = B.length (pieces $ info tf) `div` hashLength
-                                                    print $ "Piece size is: " ++ show size
-                                                    print $ "Total pieces: " ++ show piecesQty
-                                                    pieceList <- sequence [ downloadPiece sock size pieceIdx | pieceIdx <- [0..piecesQty-1]]
-                                                    -- print $ B.concat pieceList
-                                                    writeFile "output.txt" $ B.unpack $ B.concat pieceList
+                                                    downloadFile sock tf 
                                                     return ()
 
 
@@ -155,27 +149,41 @@ downloadBlock sock pieceIndex blockIndex blockLength = do
                                                           -- print $ B16.encode msg
                                                           sendPeerMessage sock msg requestMessageId
                                                           --- 
-                                                          (msgId, block) <- readPeerMessage sock
+                                                          (msgId, payload) <- readPeerMessage sock
+                                                          let block = B.drop (2*4) payload -- The payload consists of index, begin, block
                                                           print $ "Read bytes: " ++ (show $ B.length block)
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
                                                                                              print $ "Mira que loco, otro id: " ++ show msgId
                                                                                              return B.empty -- TODO: Handle this better
-                                                          -- return B.empty
+
 
 handleBlock ::  Socket -> Int -> Int -> Int -> IO ByteString
 handleBlock sock pieceIndex blockIndex blockLength = if blockLength > 0 then downloadBlock sock pieceIndex blockIndex blockLength
-                                                                          else return B.empty
+                                                                        else return B.empty
 
 downloadPiece :: Socket -> Int -> Int -> IO ByteString
 downloadPiece sock size pieceIdx = do
-                                    let blocksQty = size `div` blockSize
                                     let lastBlockSize = size `mod` blockSize
-                                    let getSize idx = if idx == blocksQty-1 then lastBlockSize else blockSize
+                                    let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
+                                    let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize 
                                     -- TODO: Do in parallel?
                                     print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
                                     print $ "Last block size: " ++ show lastBlockSize
                                     -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
                                     blockList <- sequence [ handleBlock sock pieceIdx blockIdx (getSize blockIdx) | blockIdx <- [0..blocksQty-1] ]
                                     return $ B.concat blockList
+
+downloadFile :: Socket -> TorrentFile -> IO ()
+downloadFile sock tf = do
+                            let totalSize = fileSize $ info tf
+                            let pieceSize = pieceLength $ info tf
+                            let piecesQty = B.length (pieces $ info tf) `div` hashLength
+                            print $ "Piece length is: " ++ show pieceSize
+                            print $ "Total pieces: " ++ show piecesQty
+                            let lastPieceSize = totalSize `mod` pieceSize
+                            let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize 
+                            pieceList <- sequence [ downloadPiece sock (getPieceSize pieceIdx) pieceIdx | pieceIdx <- [0..piecesQty-1]]
+                            -- print $ B.concat pieceList
+                            writeFile "output.txt" $ B.unpack $ B.concat pieceList
