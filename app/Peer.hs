@@ -71,10 +71,12 @@ handlePeerConnection tf selfPid (sock, addr) = do
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
                                                     let size = pieceLength $ info tf
+                                                    let piecesQty = B.length (pieces $ info tf) `div` hashLength
                                                     print $ "Piece size is: " ++ show size
-                                                    let piecesQty = B.length (pieces $ info tf) `div` 20
+                                                    print $ "Total pieces: " ++ show piecesQty
                                                     pieceList <- sequence [ downloadPiece sock size pieceIdx | pieceIdx <- [0..piecesQty-1]]
-                                                    print $ B.concat pieceList
+                                                    -- print $ B.concat pieceList
+                                                    writeFile "output.txt" $ B.unpack $ B.concat pieceList
                                                     return ()
 
 
@@ -113,7 +115,7 @@ readPeerMessage sock = do
                             Just bs ->  do
                                           let (msgLen, msgIdBs) = readBytesAsInt bs 4
                                           print $ "Response: " ++ B.unpack (bs)
-                                          putStrLn $ "MsgLen: " ++ show msgLen
+                                          -- putStrLn $ "MsgLen: " ++ show msgLen
                                           let msgId = B.head msgIdBs
                                           if msgLen == 1
                                               then return (msgId, B.empty)
@@ -148,7 +150,7 @@ handleUnchoke sock = do
 
 downloadBlock :: Socket -> Int -> Int -> Int -> IO ByteString
 downloadBlock sock pieceIndex blockIndex blockLength = do
-                                                          print $ "Downloading block " ++ show blockIndex ++ " offset: " ++ show (blockIndex * blockSize) ++ " of piece: " ++ show pieceIndex
+                                                          print $ "Downloading piece " ++ show pieceIndex ++ " block " ++ show blockIndex ++ " offset: " ++ show (blockIndex * blockSize)
                                                           let msg = foldr (\n bs ->  LB.toStrict (Bin.encode (fromIntegral n :: Int32)) `B.append` bs) B.empty [pieceIndex, blockIndex * blockSize, blockLength]
                                                           -- print $ B16.encode msg
                                                           sendPeerMessage sock msg requestMessageId
@@ -162,14 +164,18 @@ downloadBlock sock pieceIndex blockIndex blockLength = do
                                                                                              return B.empty -- TODO: Handle this better
                                                           -- return B.empty
 
+handleBlock ::  Socket -> Int -> Int -> Int -> IO ByteString
+handleBlock sock pieceIndex blockIndex blockLength = if blockLength > 0 then downloadBlock sock pieceIndex blockIndex blockLength
+                                                                          else return B.empty
+
 downloadPiece :: Socket -> Int -> Int -> IO ByteString
 downloadPiece sock size pieceIdx = do
-                                let blocksQty = size `div` blockSize
-                                let lastBlockSize = size `mod` blockSize
-                                let getSize idx = if idx == blocksQty-1 && lastBlockSize /= 0 then lastBlockSize else blockSize
-                                -- TODO: Do in parallel?
-                                print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
-                                print $ "Last block size: " ++ show lastBlockSize
-                                -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
-                                blockList <- sequence [ downloadBlock sock pieceIdx blockIdx (getSize blockIdx)  | blockIdx <- [0..blocksQty-1] ]
-                                return $ B.concat blockList
+                                    let blocksQty = size `div` blockSize
+                                    let lastBlockSize = size `mod` blockSize
+                                    let getSize idx = if idx == blocksQty-1 then lastBlockSize else blockSize
+                                    -- TODO: Do in parallel?
+                                    print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
+                                    print $ "Last block size: " ++ show lastBlockSize
+                                    -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
+                                    blockList <- sequence [ handleBlock sock pieceIdx blockIdx (getSize blockIdx) | blockIdx <- [0..blocksQty-1] ]
+                                    return $ B.concat blockList

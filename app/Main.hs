@@ -56,7 +56,7 @@ main = do
                     let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
                     trackerInfo <- T.getPeers (announce tf) queryParams
                     putStrLn $  "First Address: " ++ show (head $ T.peers trackerInfo)
-                    connectToPeer (head $ T.peers trackerInfo) tf selfPid
+                    connectToPeer (T.peers trackerInfo !! 1) tf selfPid
                     -- putStrLn $ "Peer id: " ++ B.unpack (Base16.encode rsp)
                     -- print tf
                 Nothing -> putStrLn "Invalid torrent file"
