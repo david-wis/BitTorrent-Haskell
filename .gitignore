@@ -3,3 +3,6 @@
 hs-bittorrent.cabal
 *~
 .vscode
+*.torrent
+*.txt
+output/

@@ -9,7 +9,6 @@ import System.Exit
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
-import Crypto.Hash.SHA1 ( hash )
 import qualified Data.ByteString.Base16 as Base16
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
@@ -56,7 +55,7 @@ main = do
                     let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
                     trackerInfo <- T.getPeers (announce tf) queryParams
                     putStrLn $  "First Address: " ++ show (head $ T.peers trackerInfo)
-                    connectToPeer (T.peers trackerInfo !! 1) tf selfPid
+                    connectToPeer (T.peers trackerInfo !! 0) tf selfPid
                     -- putStrLn $ "Peer id: " ++ B.unpack (Base16.encode rsp)
                     -- print tf
                 Nothing -> putStrLn "Invalid torrent file"

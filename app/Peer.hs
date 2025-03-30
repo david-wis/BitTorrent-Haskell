@@ -5,6 +5,7 @@ module Peer (
     connectToPeer
 ) where
 
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Char8 (ByteString)
@@ -14,6 +15,7 @@ import Utils (Address (Address), PeerId, Hash, readBytesAsInt)
 import Network.Simple.TCP
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import qualified Data.Binary as Bin
+import Crypto.Hash.SHA1 ( hash )
 
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize)
 import System.IO
@@ -108,7 +110,7 @@ readPeerMessage sock = do
                           case maybeRsp of
                             Just bs ->  do
                                           let (msgLen, msgIdBs) = readBytesAsInt bs 4
-                                          print $ "Response: " ++ B.unpack (bs)
+                                          -- print $ "Response: " ++ B.unpack (bs)
                                           -- putStrLn $ "MsgLen: " ++ show msgLen
                                           let msgId = B.head msgIdBs
                                           if msgLen == 1
@@ -155,7 +157,8 @@ downloadBlock sock pieceIndex blockIndex blockLength = do
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
-                                                                                             print $ "Mira que loco, otro id: " ++ show msgId
+                                                                                            -- downloadBlock sock pieceIndex blockIndex blockLength -- cambiar
+                                                                                             print $ "Mira que loco, otro id: " ++ show msgId 
                                                                                              return B.empty -- TODO: Handle this better
 
 
@@ -163,17 +166,24 @@ handleBlock ::  Socket -> Int -> Int -> Int -> IO ByteString
 handleBlock sock pieceIndex blockIndex blockLength = if blockLength > 0 then downloadBlock sock pieceIndex blockIndex blockLength
                                                                         else return B.empty
 
-downloadPiece :: Socket -> Int -> Int -> IO ByteString
-downloadPiece sock size pieceIdx = do
-                                    let lastBlockSize = size `mod` blockSize
-                                    let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
-                                    let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize 
-                                    -- TODO: Do in parallel?
-                                    print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
-                                    print $ "Last block size: " ++ show lastBlockSize
-                                    -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
-                                    blockList <- sequence [ handleBlock sock pieceIdx blockIdx (getSize blockIdx) | blockIdx <- [0..blocksQty-1] ]
-                                    return $ B.concat blockList
+downloadPiece :: Socket -> Int -> Int -> ByteString -> IO ByteString
+downloadPiece sock size pieceIdx pieceHash = do
+                                                let lastBlockSize = size `mod` blockSize
+                                                let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
+                                                let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize 
+                                                -- TODO: Do in parallel?
+                                                print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
+                                                print $ "Last block size: " ++ show lastBlockSize
+                                                -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
+                                                blockList <- sequence [ handleBlock sock pieceIdx blockIdx (getSize blockIdx) | blockIdx <- [0..blocksQty-1] ]
+                                                let result = B.concat blockList
+                                                let calculatedHash = hash result
+                                                if calculatedHash /= pieceHash
+                                                  then do
+                                                        print $ "calculated: " ++ B.unpack calculatedHash  ++ " , expected: " ++ B.unpack pieceHash
+                                                        -- error "Hash does not match"
+                                                        return result
+                                                  else return result
 
 downloadFile :: Socket -> TorrentFile -> IO ()
 downloadFile sock tf = do
@@ -184,6 +194,7 @@ downloadFile sock tf = do
                             print $ "Total pieces: " ++ show piecesQty
                             let lastPieceSize = totalSize `mod` pieceSize
                             let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize 
-                            pieceList <- sequence [ downloadPiece sock (getPieceSize pieceIdx) pieceIdx | pieceIdx <- [0..piecesQty-1]]
+                            let getPieceHash idx = B.take 20 $ B.drop (20 * idx) $ pieces $ info tf
+                            pieceList <- sequence [ downloadPiece sock (getPieceSize pieceIdx) pieceIdx (getPieceHash pieceIdx)| pieceIdx <- [0..piecesQty-1]]
                             -- print $ B.concat pieceList
-                            writeFile "output.txt" $ B.unpack $ B.concat pieceList
+                            BS.writeFile "output.txt" $ B.concat pieceList
