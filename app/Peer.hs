@@ -151,16 +151,20 @@ downloadBlock sock pieceIndex blockIndex blockLength = do
                                                           -- print $ B16.encode msg
                                                           sendPeerMessage sock msg requestMessageId
                                                           --- 
+                                                          readBlock sock pieceIndex blockIndex blockLength
+                                                                                        
+
+readBlock :: Socket -> Int -> Int -> Int -> IO ByteString
+readBlock sock pieceIndex blockIndex blockLength = do
                                                           (msgId, payload) <- readPeerMessage sock
                                                           let block = B.drop (2*4) payload -- The payload consists of index, begin, block
                                                           print $ "Read bytes: " ++ (show $ B.length block)
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
-                                                                                            -- downloadBlock sock pieceIndex blockIndex blockLength -- cambiar
                                                                                              print $ "Mira que loco, otro id: " ++ show msgId 
-                                                                                             return B.empty -- TODO: Handle this better
-
+                                                                                             readBlock sock pieceIndex blockIndex blockLength -- cambiar
+                                                                                            --  return B.empty -- TODO: Handle this better
 
 handleBlock ::  Socket -> Int -> Int -> Int -> IO ByteString
 handleBlock sock pieceIndex blockIndex blockLength = if blockLength > 0 then downloadBlock sock pieceIndex blockIndex blockLength
