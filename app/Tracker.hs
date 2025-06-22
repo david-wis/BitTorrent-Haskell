@@ -26,7 +26,7 @@ import qualified Data.ByteString.Base16 as Base16
 
 
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadInt, bReadString, bencodeGetValue )
-import Utils (segmentBytestring, Address (Address), readBytesAsInt)
+import Utils (segmentByteString, Address (Address), readBytesAsInt)
 
 data TrackerQueryParams = TrackerQueryParams {
     infoHash :: ByteString,
@@ -60,11 +60,11 @@ buildTrackerResponse bed@(BencodedDict _) = do
                                                 intInterv <- bReadInt interv
                                                 bePeers <- bencodeGetValue bed "peers"
                                                 bsPeers <- bReadString bePeers
-                                                return $ TrackerResponse { interval = intInterv , peers = map parseAddress $ segmentBytestring bsPeers 6 }
+                                                return $ TrackerResponse { interval = intInterv , peers = map parseAddress $ segmentByteString bsPeers 6 }
 
 -- Possible improvement: unescape unicode chars
 encodeUri :: ByteString -> String
-encodeUri bs = concatMap (('%' : ) . B.unpack) $ segmentBytestring (Base16.encode bs) 2
+encodeUri bs = concatMap (('%' : ) . B.unpack) $ segmentByteString (Base16.encode bs) 2
 
 getPeers :: String -> TrackerQueryParams -> IO TrackerResponse
 getPeers url params = do
