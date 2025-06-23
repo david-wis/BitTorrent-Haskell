@@ -11,14 +11,25 @@ import qualified Data.ByteString.Lazy as LB
 import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering), IOMode (ReadMode), openFile)
 import qualified Data.ByteString.Base16 as Base16
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+import Control.Concurrent.STM (TQueue, TVar, newTQueue, newTVar, readTVar, writeTQueue, readTQueue)
+import Control.Monad.STM ( atomically, check )
+import Control.Concurrent.Async ( mapConcurrently_)
+import qualified Data.ByteString as BS
+import System.Entropy (getEntropy)
 
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
-import Utils ( segmentByteString )
+import Utils ( segmentByteString, PieceIndex )
 import Peer (connectToPeer)
-import System.Entropy (getEntropy)
-import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength)
-import qualified Data.ByteString as BS
+import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity)
+import Worker (worker)
+
+initSharedState :: PieceIndex -> IO (TQueue PieceIndex, TVar Int)
+initSharedState pieceQty = atomically $ do
+    q <- newTQueue
+    mapM_ (writeTQueue q) [0..pieceQty-1]
+    countVar <- newTVar pieceQty
+    return (q, countVar) 
 
 main :: IO ()
 main = do
@@ -42,7 +53,25 @@ main = do
             let encodedValue = args !! 1
                 decodedValue = fst $ parseBencodedValue $ B.pack encodedValue
             in print decodedValue
-        "info" -> do
+        -- "info" -> do
+        --     handle <- openFile (args !! 1) ReadMode
+        --     contents <- B.hGetContents handle
+        --     selfPid  <- getEntropy 20
+        --     let outputFilename = args !! 2
+        --     case getTorrentFile $ fst $ parseBencodedValue contents of
+        --         Just tf -> do
+        --             putStrLn $ "Tracker URL: " ++ announce tf
+        --             putStrLn $ "Length: " ++ show (fileSize $ info tf)
+        --             putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
+        --             putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
+        --             putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentByteString (pieces $ info tf) 20)
+        --             let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
+        --             trackerInfo <- T.getPeers (announce tf) queryParams
+        --             putStrLn $  "First Address: " ++ show (head $ T.peers trackerInfo)
+        --             fileBS <- connectToPeer (T.peers trackerInfo !! 2) tf selfPid
+        --             BS.writeFile outputFilename fileBS
+        --         Nothing -> putStrLn "Invalid torrent file"
+        "download" -> do
             handle <- openFile (args !! 1) ReadMode
             contents <- B.hGetContents handle
             selfPid  <- getEntropy 20
@@ -56,8 +85,20 @@ main = do
                     putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentByteString (pieces $ info tf) 20)
                     let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
                     trackerInfo <- T.getPeers (announce tf) queryParams
-                    putStrLn $  "First Address: " ++ show (head $ T.peers trackerInfo)
-                    fileBS <- connectToPeer (T.peers trackerInfo !! 2) tf selfPid
-                    BS.writeFile outputFilename fileBS
+
+                    let piecesQty = getPieceQuantity tf
+                    (queue, piecesLeft) <- initSharedState piecesQty
+                    mapConcurrently_ (worker queue piecesLeft outputFilename tf selfPid) [(T.peers trackerInfo !! 0)]
+                    putStrLn $ "started workers ???????????????????????????"
+
+                    atomically $ do
+                        remaining <- readTVar piecesLeft
+                        check (remaining == 0)
+
+                    
+                    -- fileBS <- connectToPeer (T.peers trackerInfo !! 2) tf selfPid
+                    
                 Nothing -> putStrLn "Invalid torrent file"
         _ -> do putStrLn "Invalid command"
+    
+
