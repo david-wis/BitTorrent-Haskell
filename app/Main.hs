@@ -88,13 +88,17 @@ main = do
 
                     let piecesQty = getPieceQuantity tf
                     (queue, piecesLeft) <- initSharedState piecesQty
-                    mapConcurrently_ (worker queue piecesLeft outputFilename tf selfPid) [(T.peers trackerInfo !! 0)]
-                    putStrLn $ "started workers ???????????????????????????"
+                    mapConcurrently_ (worker queue piecesLeft outputFilename tf selfPid) (T.peers trackerInfo) -- [(T.peers trackerInfo !! 0)]
 
                     atomically $ do
                         remaining <- readTVar piecesLeft
                         check (remaining == 0)
-
+                    
+                    putStrLn "All pieces downloaded, joining files..."
+                    mapM_ (\i -> do
+                        bs <- BS.readFile (outputFilename ++ show i ++ ".part")
+                        BS.appendFile outputFilename bs) [0..piecesQty-1]
+                    putStrLn $ "Files joined successfully. File saved as: " ++ outputFilename
                     
                     -- fileBS <- connectToPeer (T.peers trackerInfo !! 2) tf selfPid
                     
