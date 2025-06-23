@@ -3,6 +3,7 @@
 
 module Peer (
     connectToPeer,
+    disconnectFromPeer,
     downloadPiece
 ) where
 
@@ -12,15 +13,21 @@ import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Char8 (ByteString)
 import Data.Word (Word8)
 import Data.Int (Int32)
-import Utils (Address (Address), PeerId, Hash, BitField, readBytesAsInt, intToByteString)
-import Network.Simple.TCP (connect, Socket, SockAddr, send, recv)
+import Utils ( Address(Address),
+      BitField,
+      Hash,
+      PeerId,
+      intToByteString,
+      readBytesAsInt,
+      PieceIndex,
+      BlockIndex )
+import Network.Simple.TCP (connectSock, closeSock, Socket, SockAddr, send, recv)
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import qualified Data.Binary as Bin
 import Crypto.Hash.SHA1 ( hash )
 import System.IO
 
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize, hashLength)
-import Utils (PieceIndex, BlockIndex)
 type MessageId = Char
 
 unchokeMessageId :: MessageId
@@ -60,10 +67,19 @@ blockSize = 16384 -- 16 KiB
 -- End Constants
 
 connectToPeer :: Address -> TorrentFile -> PeerId -> IO (Socket, BitField)
-connectToPeer (Address ip port) tf selfPid = connect ip port (handlePeerConnection tf selfPid)
+connectToPeer (Address ip port) tf selfPid =
+  do
+    conn@(sock, _) <- connectSock ip port
+    bitField <- handlePeerConnection tf selfPid conn
+    return (sock, bitField)
+
+disconnectFromPeer :: Socket -> IO ()
+disconnectFromPeer sock = do
+  putStrLn "Disconnecting from peer..."
+  closeSock sock
 
 
-handlePeerConnection :: TorrentFile -> PeerId -> (Socket, SockAddr) -> IO (Socket, BitField) -- TODO: Return file names instead of ByteString?
+handlePeerConnection :: TorrentFile -> PeerId -> (Socket, SockAddr) -> IO BitField -- TODO: Return file names instead of ByteString?
 handlePeerConnection tf selfPid (sock, _) = do
                                                     peerId <- handleHandshake (infoHash tf) selfPid sock
                                                     putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
@@ -71,7 +87,7 @@ handlePeerConnection tf selfPid (sock, _) = do
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
                                                     -- downloadFile sock tf 
-                                                    return (sock, bitField)
+                                                    return bitField
 
 
 -- | Handles the handshake with the peer, sending the info hash and receiving the peer ID
@@ -81,7 +97,7 @@ handleHandshake hash selfPid sock = do
                                   send sock msg
                                   maybeRsp <- recv sock (handshakePrefixLength + reservedBytesLength + hashLength + peerIdLength)
                                   case maybeRsp of
-                                    Just response -> 
+                                    Just response ->
                                                 let responsePrefix = B.take handshakePrefixLength response in -- \19BitTorrent protocol
                                                 return (
                                                   if responsePrefix == handshakePrefix
@@ -146,7 +162,7 @@ handleUnchoke sock = do
                       if msgId == unchokeMessageId
                         then return ()
                         else error "Expected BitField message"
-                                                                                        
+
 -- 
 readBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
 readBlock sock pieceIndex blockIndex actualBlockSize = do
@@ -156,7 +172,7 @@ readBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
-                                                                                             print $ "Mira que loco, otro id: " ++ show msgId 
+                                                                                             print $ "Mira que loco, otro id: " ++ show msgId
                                                                                              readBlock sock pieceIndex blockIndex actualBlockSize -- cambiar
                                                                                             --  return B.empty -- TODO: Handle this better
 
@@ -174,12 +190,12 @@ downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO ByteString
 downloadPiece sock size pieceIdx pieceHash = do
                                                 let lastBlockSize = size `mod` blockSize
                                                 let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
-                                                let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize 
+                                                let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize
                                                 -- TODO: Do in parallel?
                                                 print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
                                                 print $ "Last block size: " ++ show lastBlockSize
                                                 -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
-                                                blockList <- sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1], 
+                                                blockList <- sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1],
                                                                                                                                let actualBlockSize = getSize blockIdx,
                                                                                                                                actualBlockSize > 0]
                                                 let result = B.concat blockList
@@ -200,7 +216,7 @@ downloadFile sock tf = do
                             print $ "Piece length is: " ++ show pieceSize
                             print $ "Total pieces: " ++ show piecesQty
                             let lastPieceSize = totalSize `mod` pieceSize
-                            let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize 
+                            let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize
                             let getPieceHash idx = B.take 20 $ B.drop (20 * idx) $ pieces $ info tf
                             pieceList <- sequence [ downloadPiece sock (getPieceSize pieceIdx) pieceIdx (getPieceHash pieceIdx)| pieceIdx <- [0..piecesQty-1]]
                             -- print $ B.concat pieceList
