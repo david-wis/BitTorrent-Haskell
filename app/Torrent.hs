@@ -3,6 +3,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Torrent(
     TorrentInfo (TorrentInfo),
+    hashLength,
+    getPieceQuantity,
     fileSize,
     name,
     pieceLength,
@@ -69,3 +71,9 @@ getTorrentFile _ = error "Bencode elem is not a dictionary"
 
 torrentFileToHexHash :: TorrentFile -> String
 torrentFileToHexHash tf = B.unpack $ Base16.encode $ infoHash tf
+
+hashLength :: Int
+hashLength = 20
+
+getPieceQuantity :: TorrentFile -> Int
+getPieceQuantity tf = B.length (pieces $ info tf) `div` hashLength
