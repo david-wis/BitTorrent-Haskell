@@ -3,7 +3,7 @@
 
 module Peer (
     connectToPeer,
-    disconnectFromPeer,
+    -- disconnectFromPeer,
     downloadPiece
 ) where
 
@@ -21,11 +21,12 @@ import Utils ( Address(Address),
       readBytesAsInt,
       PieceIndex,
       BlockIndex )
-import Network.Simple.TCP (connectSock, closeSock, Socket, SockAddr, send, recv)
+import Network.Simple.TCP (connect, connectSock, closeSock, Socket, SockAddr, send, recv)
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import qualified Data.Binary as Bin
 import Crypto.Hash.SHA1 ( hash )
 import System.IO
+import Control.Exception (finally, catch, SomeException)
 
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize, hashLength)
 type MessageId = Char
@@ -66,28 +67,26 @@ blockSize :: Int
 blockSize = 16384 -- 16 KiB
 -- End Constants
 
-connectToPeer :: Address -> TorrentFile -> PeerId -> IO (Socket, BitField)
-connectToPeer (Address ip port) tf selfPid =
-  do
-    conn@(sock, _) <- connectSock ip port
-    bitField <- handlePeerConnection tf selfPid conn
-    return (sock, bitField)
+connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) ->  IO Bool
+connectToPeer (Address ip port) tf selfPid callback = (connect ip port (handlePeerConnection tf selfPid callback) `catch` closeConnection) >> return True
+  where closeConnection :: SomeException -> IO ()
+        closeConnection _ = putStrLn "Connection closed"
 
-disconnectFromPeer :: Socket -> IO ()
-disconnectFromPeer sock = do
-  putStrLn "Disconnecting from peer..."
-  closeSock sock
+-- disconnectFromPeer :: Socket -> IO ()
+-- disconnectFromPeer sock = do
+--   putStrLn "Disconnecting from peer..."
+--   closeSock sock
 
 
-handlePeerConnection :: TorrentFile -> PeerId -> (Socket, SockAddr) -> IO BitField -- TODO: Return file names instead of ByteString?
-handlePeerConnection tf selfPid (sock, _) = do
+handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO () -- TODO: Return file names instead of ByteString?
+handlePeerConnection tf selfPid callback (sock, _) = do
                                                     peerId <- handleHandshake (infoHash tf) selfPid sock
                                                     putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
                                                     bitField <- handleBitField sock
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
                                                     -- downloadFile sock tf 
-                                                    return bitField
+                                                    callback bitField sock
 
 
 -- | Handles the handshake with the peer, sending the info hash and receiving the peer ID
