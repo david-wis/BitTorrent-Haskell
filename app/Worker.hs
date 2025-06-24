@@ -6,6 +6,7 @@ module Worker (
 
 import Control.Monad (when)
 import Control.Concurrent.STM (TQueue, TVar, readTQueue, writeTQueue, readTVarIO, modifyTVar)
+import Control.Concurrent.Async ( replicateConcurrently_ )
 import Control.Monad.STM ( atomically )
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B
@@ -15,11 +16,11 @@ import Network.Simple.TCP (Socket)
 
 import Utils (Address, PeerId, PieceIndex, BitField, Path)
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize, getPieceQuantity)
-import Peer (connectToPeer, disconnectFromPeer, downloadPiece)
+import Peer (connectToPeer, downloadPiece)
 
 
-loopWorker :: TQueue PieceIndex -> TVar Int -> Path -> TorrentFile -> Socket -> BitField -> IO ()
-loopWorker queue piecesLeft outputFilename torrentFile sock bitfield =
+loopWorker :: TQueue PieceIndex -> TVar Int -> Path -> TorrentFile -> BitField -> Socket -> IO ()
+loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
     -- TODO: Inspect bitField to determine which pieces are available
     do
         remaining <- readTVarIO piecesLeft
@@ -36,7 +37,7 @@ loopWorker queue piecesLeft outputFilename torrentFile sock bitfield =
                 pieceBS <- downloadPiece sock (getPieceSize pieceIndex) pieceIndex (getPieceHash pieceIndex)
                 BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
                 atomically $ modifyTVar piecesLeft (\x -> x-1)
-                loopWorker queue piecesLeft outputFilename torrentFile sock bitfield
+                loopWorker queue piecesLeft outputFilename torrentFile bitfield sock
         else do
             putStrLn "All pieces downloaded!"
 
@@ -44,8 +45,14 @@ loopWorker queue piecesLeft outputFilename torrentFile sock bitfield =
 worker :: TQueue PieceIndex -> TVar Int -> Path -> TorrentFile -> PeerId -> Address -> IO ()
 worker queue piecesLeft outputFilename torrentFile peerId addr =
     do
-        (sock, bitField) <- connectToPeer addr torrentFile peerId
-        loopWorker queue piecesLeft outputFilename torrentFile sock bitField
+        success <- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
+        if success 
+        then replicateConcurrently_ 5 $ do
+            sock <- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
+            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
+            return ()
+        else do
+            putStrLn "Failed to connect to peer"
         atomically $ writeTQueue queue (-1)
-        disconnectFromPeer sock
+        -- disconnectFromPeer sock
         return ()
