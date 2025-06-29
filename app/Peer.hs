@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Peer (
     connectToPeer,
@@ -67,10 +68,10 @@ blockSize :: Int
 blockSize = 16384 -- 16 KiB
 -- End Constants
 
-connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) ->  IO Bool
-connectToPeer (Address ip port) tf selfPid callback = (connect ip port (handlePeerConnection tf selfPid callback) `catch` closeConnection) >> return True
-  where closeConnection :: SomeException -> IO ()
-        closeConnection _ = putStrLn "Connection closed"
+connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> IO Bool
+connectToPeer (Address ip port) tf selfPid callback =
+  (connect ip port (handlePeerConnection tf selfPid callback) >> return True)
+    `catch` \(_ :: SomeException) -> return False
 
 -- disconnectFromPeer :: Socket -> IO ()
 -- disconnectFromPeer sock = do
@@ -81,7 +82,7 @@ connectToPeer (Address ip port) tf selfPid callback = (connect ip port (handlePe
 handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO () -- TODO: Return file names instead of ByteString?
 handlePeerConnection tf selfPid callback (sock, _) = do
                                                     peerId <- handleHandshake (infoHash tf) selfPid sock
-                                                    putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
+                                                    -- putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
                                                     bitField <- handleBitField sock
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
@@ -155,9 +156,9 @@ sendInterestedMessage sock = sendPeerMessage sock B.empty interestMessageId
 -- | Waits for an unchoke message from the peer
 handleUnchoke :: Socket -> IO ()
 handleUnchoke sock = do
-                      putStrLn "Waiting for unchoke..."
+                      -- putStrLn "Waiting for unchoke..."
                       (msgId, _) <- readPeerMessage sock
-                      putStrLn "Unchoked"
+                      -- putStrLn "Unchoked"
                       if msgId == unchokeMessageId
                         then return ()
                         else error "Expected BitField message"
@@ -167,7 +168,7 @@ readBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
 readBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           (msgId, payload) <- readPeerMessage sock
                                                           let block = B.drop (2*4) payload -- The payload consists of index, begin, block
-                                                          print $ "Read bytes: " ++ (show $ B.length block)
+                                                          -- print $ "Read bytes: " ++ (show $ B.length block)
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
@@ -177,7 +178,7 @@ readBlock sock pieceIndex blockIndex actualBlockSize = do
 
 downloadBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
 downloadBlock sock pieceIndex blockIndex actualBlockSize = do
-                                                          print $ "Downloading piece " ++ show pieceIndex ++ " block " ++ show blockIndex ++ " offset: " ++ show (blockIndex * blockSize)
+                                                          -- print $ "Downloading piece " ++ show pieceIndex ++ " block " ++ show blockIndex ++ " offset: " ++ show (blockIndex * blockSize)
                                                           -- Encode the request message
                                                           let msg = foldr (B.append . intToByteString) B.empty [pieceIndex, blockIndex * blockSize, actualBlockSize]
                                                           -- print $ B16.encode msg
@@ -191,8 +192,8 @@ downloadPiece sock size pieceIdx pieceHash = do
                                                 let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
                                                 let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize
                                                 -- TODO: Do in parallel?
-                                                print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
-                                                print $ "Last block size: " ++ show lastBlockSize
+                                                -- print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
+                                                -- print $ "Last block size: " ++ show lastBlockSize
                                                 -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
                                                 blockList <- sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1],
                                                                                                                                let actualBlockSize = getSize blockIdx,
@@ -212,8 +213,8 @@ downloadFile sock tf = do
                             let totalSize = fileSize $ info tf
                             let pieceSize = pieceLength $ info tf
                             let piecesQty = B.length (pieces $ info tf) `div` hashLength
-                            print $ "Piece length is: " ++ show pieceSize
-                            print $ "Total pieces: " ++ show piecesQty
+                            -- print $ "Piece length is: " ++ show pieceSize
+                            -- print $ "Total pieces: " ++ show piecesQty
                             let lastPieceSize = totalSize `mod` pieceSize
                             let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize
                             let getPieceHash idx = B.take 20 $ B.drop (20 * idx) $ pieces $ info tf
