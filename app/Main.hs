@@ -16,6 +16,7 @@ import Control.Monad.STM ( atomically, check )
 import Control.Concurrent.Async ( mapConcurrently_)
 import qualified Data.ByteString as BS
 import System.Entropy (getEntropy)
+import System.Directory (removeFile)
 
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
@@ -24,10 +25,10 @@ import Peer (connectToPeer)
 import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity)
 import Worker (worker)
 
-initSharedState :: PieceIndex -> IO (TQueue PieceIndex, TVar Int)
+initSharedState :: PieceIndex -> IO (TQueue (Maybe PieceIndex), TVar Int)
 initSharedState pieceQty = atomically $ do
     q <- newTQueue
-    mapM_ (writeTQueue q) [0..pieceQty-1]
+    mapM_ (writeTQueue q . Just) [0..pieceQty-1]
     countVar <- newTVar pieceQty
     return (q, countVar) 
 
@@ -88,7 +89,8 @@ main = do
 
                     let piecesQty = getPieceQuantity tf
                     (queue, piecesLeft) <- initSharedState piecesQty
-                    mapConcurrently_ (worker queue piecesLeft outputFilename tf selfPid) (T.peers trackerInfo) -- [(T.peers trackerInfo !! 0)]
+                    mapConcurrently_ (worker queue piecesLeft outputFilename tf selfPid) (T.peers trackerInfo)
+                    --[(T.peers trackerInfo !! 0)]
 
                     atomically $ do
                         remaining <- readTVar piecesLeft
@@ -97,6 +99,7 @@ main = do
                     putStrLn "All pieces downloaded, joining files..."
                     mapM_ (\i -> do
                         bs <- BS.readFile (outputFilename ++ show i ++ ".part")
+                        removeFile (outputFilename ++ show i ++ ".part")
                         BS.appendFile outputFilename bs) [0..piecesQty-1]
                     putStrLn $ "Files joined successfully. File saved as: " ++ outputFilename
                     
