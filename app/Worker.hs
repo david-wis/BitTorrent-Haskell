@@ -45,14 +45,11 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
 worker :: TQueue PieceIndex -> TVar Int -> Path -> TorrentFile -> PeerId -> Address -> IO ()
 worker queue piecesLeft outputFilename torrentFile peerId addr =
     do
-        success <- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
-        if success 
-        then replicateConcurrently_ 5 $ do
-            sock <- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
+        success <- connectToPeer addr torrentFile peerId (\_ _ -> return ())
+        when success $ replicateConcurrently_ 5 $ do
             connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
             return ()
-        else do
-            putStrLn "Failed to connect to peer"
+            -- putStrLn "Failed to connect to peer"
         atomically $ writeTQueue queue (-1)
         -- disconnectFromPeer sock
         return ()
