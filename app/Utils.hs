@@ -23,6 +23,7 @@ import qualified Data.Binary as Bin
 import Control.Concurrent.STM (TQueue, TVar)
 import Data.Int (Int32)
 import Control.Monad (when)
+
 data Address = Address String String
 
 type Hash = ByteString
