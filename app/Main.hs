@@ -17,6 +17,7 @@ import Control.Concurrent.Async ( mapConcurrently_)
 import qualified Data.ByteString as BS
 import System.Entropy (getEntropy)
 import System.Directory (removeFile)
+import Data.Time.Clock (getCurrentTime, diffUTCTime)
 
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
@@ -35,40 +36,48 @@ initSharedState pieceQty = atomically $ do
 
 run :: ArgsInfo -> IO ()
 run args = do
-             handle <- openFile (inputPath args) ReadMode
+            handle <- openFile (inputPath args) ReadMode
 
-             contents <- B.hGetContents handle
-             selfPid  <- getEntropy 20
-             let outputFilename = outputPath args
-             case getTorrentFile $ fst $ parseBencodedValue contents of
-                 Just tf -> do
-                     putStrLn $ "Tracker URL: " ++ announce tf
-                     putStrLn $ "Length: " ++ show (fileSize $ info tf)
-                     putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
-                     putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
+            contents <- B.hGetContents handle
+            selfPid  <- getEntropy 20
+            let outputFilename = outputPath args
+            case getTorrentFile $ fst $ parseBencodedValue contents of
+                Just tf -> do
+                    putStrLn $ "Tracker URL: " ++ announce tf
+                    putStrLn $ "Length: " ++ show (fileSize $ info tf)
+                    putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
+                    putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
                     --  putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentByteString (pieces $ info tf) 20)
-                     let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
-                     trackerInfo <- T.getPeers (announce tf) queryParams
+                    let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
+                    trackerInfo <- T.getPeers (announce tf) queryParams
 
-                     let piecesQty = getPieceQuantity tf
-                     (queue, piecesLeft) <- initSharedState piecesQty
-                     let peers = case peerCount args of 
-                                      Nothing -> T.peers trackerInfo
-                                      (Just n) -> take n $ T.peers trackerInfo
-                     mapConcurrently_ (worker queue piecesLeft args tf selfPid) peers
+                    let piecesQty = getPieceQuantity tf
+                    (queue, piecesLeft) <- initSharedState piecesQty
+                    let peers = case peerCount args of 
+                                     Nothing -> T.peers trackerInfo
+                                     (Just n) -> take n $ T.peers trackerInfo
+                    putStrLn $ "Peers: " ++ show (length peers)
 
-                     atomically $ do
-                         remaining <- readTVar piecesLeft
-                         check (remaining == 0)
-                     
-                     putStrLn "All pieces downloaded, joining files..."
-                     mapM_ (\i -> do
-                         bs <- BS.readFile (outputFilename ++ show i ++ ".part")
-                         removeFile (outputFilename ++ show i ++ ".part")
-                         BS.appendFile outputFilename bs) [0..piecesQty-1]
-                     putStrLn $ "Files joined successfully. File saved as: " ++ outputFilename
-                     
-                 Nothing -> putStrLn "Invalid torrent file"
+                    startTime <- getCurrentTime
+                    mapConcurrently_ (worker queue piecesLeft args tf selfPid) peers
+
+                    atomically $ do
+                        remaining <- readTVar piecesLeft
+                        check (remaining == 0)
+                    
+                    joinTime <- getCurrentTime
+                    putStrLn $ "download duration: " ++ (show $ diffUTCTime joinTime startTime)
+                    
+                    putStrLn "All pieces downloaded, joining files..."
+                    mapM_ (\i -> do
+                        bs <- BS.readFile (outputFilename ++ show i ++ ".part")
+                        removeFile (outputFilename ++ show i ++ ".part")
+                        BS.appendFile outputFilename bs) [0..piecesQty-1]
+                    putStrLn $ "Files joined successfully. File saved as: " ++ outputFilename
+                    endTime <- getCurrentTime
+
+                    putStrLn $ "Write duration: " ++ show (diffUTCTime endTime joinTime)
+                Nothing -> putStrLn "Invalid torrent file"
 
 main :: IO ()
 main = do
