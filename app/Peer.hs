@@ -71,7 +71,7 @@ blockSize = 16384 -- 16 KiB
 connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> IO Bool
 connectToPeer (Address ip port) tf selfPid callback =
   (connect ip port (handlePeerConnection tf selfPid callback) >> return True)
-    `catch` \(_ :: SomeException) -> return False
+    `catch` \(e :: SomeException) -> putStrLn ("Failed to connect to peer: " ++ show e) >> return False
 
 -- disconnectFromPeer :: Socket -> IO ()
 -- disconnectFromPeer sock = do

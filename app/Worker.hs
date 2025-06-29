@@ -13,7 +13,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B
 import Data.ByteString.Char8 (ByteString)
 import Network.Simple.TCP (Socket)
-
+import Args (ArgsInfo(ArgsInfo), outputPath, threadsPerPeer)
 import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 
 
@@ -53,13 +53,13 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
         else atomically $ writeTQueue queue Nothing
 
 
-worker :: TQueue (Maybe PieceIndex) -> TVar Int -> Path -> TorrentFile -> PeerId -> Address -> IO ()
-worker queue piecesLeft outputFilename torrentFile peerId addr =
+worker :: TQueue (Maybe PieceIndex) -> TVar Int -> ArgsInfo -> TorrentFile -> PeerId -> Address -> IO ()
+worker queue piecesLeft ArgsInfo{outputPath=outPath, threadsPerPeer=tPerPeer} torrentFile peerId addr =
     do
         success <- connectToPeer addr torrentFile peerId (\_ _ -> return ())
         -- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
-        when success $ replicateConcurrently_ 10 $ do
-            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFilename torrentFile)
+        when success $ replicateConcurrently_ tPerPeer $ do
+            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outPath torrentFile)
             return ()
             -- putStrLn "Failed to connect to peer"
         -- disconnectFromPeer sock
