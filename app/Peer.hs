@@ -71,7 +71,8 @@ blockSize = 16384 -- 16 KiB
 connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> IO Bool
 connectToPeer (Address ip port) tf selfPid callback =
   (connect ip port (handlePeerConnection tf selfPid callback) >> return True)
-    `catch` \(e :: SomeException) -> putStrLn ("Failed to connect to peer: " ++ show e) >> return False
+    `catch` \(e :: SomeException) -> return False
+      --putStrLn ("Failed to connect to peer: " ++ show e) >> return False
 
 -- disconnectFromPeer :: Socket -> IO ()
 -- disconnectFromPeer sock = do
@@ -186,7 +187,7 @@ downloadBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           --- 
                                                           readBlock sock pieceIndex blockIndex actualBlockSize
 
-downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO ByteString
+downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO (ByteString)
 downloadPiece sock size pieceIdx pieceHash = do
                                                 let lastBlockSize = size `mod` blockSize
                                                 let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
@@ -206,19 +207,3 @@ downloadPiece sock size pieceIdx pieceHash = do
                                                         error "Hash does not match"
                                                         -- return result
                                                   else return result
-
--- | Deprecated?
-downloadFile :: Socket -> TorrentFile -> IO ByteString
-downloadFile sock tf = do
-                            let totalSize = fileSize $ info tf
-                            let pieceSize = pieceLength $ info tf
-                            let piecesQty = B.length (pieces $ info tf) `div` hashLength
-                            -- print $ "Piece length is: " ++ show pieceSize
-                            -- print $ "Total pieces: " ++ show piecesQty
-                            let lastPieceSize = totalSize `mod` pieceSize
-                            let getPieceSize idx = if idx /= piecesQty-1 || lastPieceSize == 0 then pieceSize else lastPieceSize
-                            let getPieceHash idx = B.take 20 $ B.drop (20 * idx) $ pieces $ info tf
-                            pieceList <- sequence [ downloadPiece sock (getPieceSize pieceIdx) pieceIdx (getPieceHash pieceIdx)| pieceIdx <- [0..piecesQty-1]]
-                            -- print $ B.concat pieceList
-                            -- BS.writeFile "output.txt" $ B.concat pieceList
-                            return $ B.concat pieceList

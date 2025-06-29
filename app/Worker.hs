@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Worker (
     worker
 ) where
@@ -20,6 +21,7 @@ import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
 import Utils (Address, PeerId, PieceIndex, BitField, Path, bitFieldContains)
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize, getPieceQuantity)
 import Peer (connectToPeer, downloadPiece)
+import Control.Exception (throw, catch, SomeException)
 
 loopWorker :: TQueue (Maybe PieceIndex) -> TVar Int -> Path -> TorrentFile -> BitField -> Socket -> IO ()
 loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
@@ -41,7 +43,9 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
                     -- putStrLn $ "Bitfield: " ++ (B.unpack $ B16.encode bitfield)
                     if (bitFieldContains bitfield pieceIndex) -- Check if the peer has the piece
                     then do
-                            pieceBS <- downloadPiece sock (getPieceSize pieceIndex) pieceIndex (getPieceHash pieceIndex)
+                            pieceBS <- downloadPiece sock (getPieceSize pieceIndex) pieceIndex (getPieceHash pieceIndex) 
+                                        `catch` \(e :: SomeException) -> (putStrLn $ show pieceIndex) >> (atomically $ writeTQueue queue maybePieceIndex) >> (throw e)
+
                             BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
                             atomically $ modifyTVar piecesLeft (\x -> x-1)
                     else do
