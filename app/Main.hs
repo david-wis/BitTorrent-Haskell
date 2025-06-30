@@ -16,16 +16,18 @@ import Control.Monad.STM ( atomically, check )
 import Control.Concurrent.Async ( mapConcurrently_)
 import qualified Data.ByteString as BS
 import System.Entropy (getEntropy)
-import System.Directory (removeFile)
+import System.Directory (removeFile, doesDirectoryExist, makeAbsolute)
+import System.FilePath ((</>))
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Control.Monad
 
 import qualified Tracker as T
 import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 import Utils ( segmentByteString, PieceIndex )
 import Peer (connectToPeer)
-import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity)
+import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity, name)
 import Worker (worker)
-import Args (ArgsInfo, loadArgs, inputPath, outputPath, peerCount)
+import Args (ArgsInfo, loadArgs, inputPath, outputPath, peerCount, threadsPerPeer)
 initSharedState :: PieceIndex -> IO (TQueue (Maybe PieceIndex), TVar Int)
 initSharedState pieceQty = atomically $ do
     q <- newTQueue
@@ -37,10 +39,14 @@ initSharedState pieceQty = atomically $ do
 run :: ArgsInfo -> IO ()
 run args = do
             handle <- openFile (inputPath args) ReadMode
+            absOutPath <- makeAbsolute $ outputPath args
+            pathExists <- doesDirectoryExist absOutPath
+            Control.Monad.when (not pathExists) $ do
+                putStrLn $ "Output path does not exist: " ++ absOutPath
+                exitWith (ExitFailure 1)
 
             contents <- B.hGetContents handle
             selfPid  <- getEntropy 20
-            let outputFilename = outputPath args
             case getTorrentFile $ fst $ parseBencodedValue contents of
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf
@@ -48,6 +54,9 @@ run args = do
                     putStrLn $ "Info Hash: " ++ torrentFileToHexHash tf
                     putStrLn $ "Piece Length: " ++ show (pieceLength $ info tf)
                     --  putStrLn $ "Piece Hashes: " ++ concatMap (('\n' : ) . B.unpack . Base16.encode) (segmentByteString (pieces $ info tf) 20)
+                    let outputFilename = absOutPath </> (name . info) tf
+                    putStrLn $ "Output file: " ++ outputFilename
+
                     let queryParams = T.TrackerQueryParams { T.infoHash = infoHash tf, T.peerId = selfPid, T.port = 6881, T.uploaded = 0, T.downloaded = 0, T.left = fileSize $ info tf,  T.compact = 1 }
                     trackerInfo <- T.getPeers (announce tf) queryParams
 
@@ -59,7 +68,7 @@ run args = do
                     putStrLn $ "Peers: " ++ show (length peers)
 
                     startTime <- getCurrentTime
-                    mapConcurrently_ (worker queue piecesLeft args tf selfPid) peers
+                    mapConcurrently_ (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid) peers
 
                     atomically $ do
                         remaining <- readTVar piecesLeft
