@@ -68,4 +68,3 @@ whenJust :: Monad m => Maybe a -> (a -> Bool) -> (a -> m ()) -> m ()
 --                         then f x
 --                         else return ()
 whenJust mx p f = maybe (return ()) (\x -> when (p x) (f x)) mx
-

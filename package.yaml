@@ -32,9 +32,11 @@ dependencies:
   - base16-bytestring
   - entropy
   - directory
+  - filepath
   - binary
   - async
   - stm
+
 executables:
   hs-bittorrent-exe:
     main: Main.hs
