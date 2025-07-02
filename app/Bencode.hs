@@ -32,42 +32,56 @@ instance Show BencodedElem where
     show (BencodedDict elems) = "{" ++ intercalate ", " (map (\(k, v) -> show k ++ ": " ++ show v) elems) ++ "}"
 
 
-parseBencodedString :: ByteString -> (BencodedElem, ByteString)
-parseBencodedString s = case B.elemIndex ':' s of
-                           Just pos -> let (sLen, sRemainingRaw) = B.splitAt pos s
-                                           Just (len, _) = B.readInt sLen -- TODO: Add validations
-                                           sRemaining = B.tail sRemainingRaw -- Remove ':'
-                                           (sExtracted, sReturn) = B.splitAt len sRemaining
-                                       in (BencodedString sExtracted, sReturn) -- TODO: Check what happens if the length is wrong
-                           Nothing -> error "Invalid string format"
-
-parseBencodedInt :: ByteString -> (BencodedElem, ByteString)
-parseBencodedInt (uncons -> Just ('i', sNum)) = case B.readInt sNum of
-                                                      Just (n, uncons -> Just ('e', sReturn)) -> (BencodedInt n, sReturn)
-                                                      Nothing -> error "Invalid Int format"
-parseBencodedInt _ = error "Invalid Int format"
-
-parseBencodedListRecursive :: ByteString -> ([BencodedElem], ByteString)
-parseBencodedListRecursive (uncons -> Just ('e', sReturn)) = ([], sReturn)
-parseBencodedListRecursive sList = let (elem, sRemaining) = parseBencodedValue sList
-                                       (elems, sReturn) = parseBencodedListRecursive sRemaining
-                                    in (elem:elems, sReturn)
-
-parseBencodedList :: ByteString -> (BencodedElem, ByteString)
-parseBencodedList (uncons -> Just ('l', sList)) = let (elems, sRemaining) = parseBencodedListRecursive sList
-                                                   in (BencodedArray elems, sRemaining)
+parseBencodedString :: ByteString -> Maybe (BencodedElem, ByteString)
+parseBencodedString s = do 
+                            pos <- B.elemIndex ':' s 
+                            let (sLen, sRemainingRaw) = B.splitAt pos s
+                            (len, _) <- B.readInt sLen 
+                            let sRemaining = B.tail sRemainingRaw -- Remove ':'
+                                (sExtracted, sReturn) = B.splitAt len sRemaining
+                            return (BencodedString sExtracted, sReturn)
 
 
-parseBencodedDict :: ByteString -> (BencodedElem, ByteString)
-parseBencodedDict (uncons -> Just ('d', sList)) = let (elems, sRemaining) = parseBencodedListRecursive sList
-                                                      groupedElems = groupPairs elems
-                                                   in (BencodedDict groupedElems, sRemaining)
-                                                 where groupPairs [] = []
-                                                       groupPairs ((BencodedString key):e2:es) = (key,e2) : groupPairs es
-                                                       groupPairs _ = error "Wrong dict parity or Key is not String"
 
 
-parseBencodedValue :: ByteString -> (BencodedElem, ByteString)
+parseBencodedInt :: ByteString -> Maybe (BencodedElem, ByteString)
+parseBencodedInt (uncons -> Just ('i', sNum)) =  do
+                                                    tuple <- B.readInt sNum
+                                                    (n, sReturn) <- removeE tuple
+                                                    return (BencodedInt n, sReturn)
+                                              where removeE t@(n, uncons -> Just ('e', sReturn)) = Just (n, sReturn)
+                                                    removeE _ = Nothing
+parseBencodedInt _ = Nothing
+
+parseBencodedListRecursive :: ByteString -> Maybe ([BencodedElem], ByteString)
+parseBencodedListRecursive (uncons -> Just ('e', sReturn)) = Just ([], sReturn)
+parseBencodedListRecursive sList = do (elem, sRemaining) <- parseBencodedValue sList
+                                      (elems, sReturn) <- parseBencodedListRecursive sRemaining
+                                      return (elem:elems, sReturn)
+
+parseBencodedList :: ByteString -> Maybe (BencodedElem, ByteString)
+parseBencodedList (uncons -> Just ('l', sList)) = do 
+                                                      (elems, sRemaining) <- parseBencodedListRecursive sList
+                                                      return (BencodedArray elems, sRemaining)
+parseBencodedList _ = Nothing -- Should never happen
+
+
+-- Nothing if length is odd or any key is not string
+groupPairs :: [BencodedElem] -> Maybe [(ByteString, BencodedElem)]
+groupPairs [] = Just []
+groupPairs ((BencodedString key):e2:es) = do xs <- groupPairs es
+                                             return ((key,e2) : xs)
+groupPairs _ = Nothing
+
+parseBencodedDict :: ByteString -> Maybe (BencodedElem, ByteString)
+parseBencodedDict (uncons -> Just ('d', sList)) = do 
+                                                      (elems, sRemaining) <- parseBencodedListRecursive sList
+                                                      groupedElems <- groupPairs elems
+                                                      return (BencodedDict groupedElems, sRemaining)
+parseBencodedDict _ = Nothing
+
+
+parseBencodedValue :: ByteString -> Maybe (BencodedElem, ByteString)
 -- The equivalent version with native haskell strings (instead of bytestrings) would be:
 -- parseBencodedValue cs@(c:_) = ...
 parseBencodedValue cs@(uncons -> Just (c, _)) = case c of
@@ -75,7 +89,7 @@ parseBencodedValue cs@(uncons -> Just (c, _)) = case c of
                                                     'd' -> parseBencodedDict cs
                                                     'i' -> parseBencodedInt cs
                                                     _ -> if isDigit c then parseBencodedString cs
-                                                         else error "TODO"
+                                                         else Nothing
 
 -- TODO: See if we should use an Exception Monad instead of Maybe
 

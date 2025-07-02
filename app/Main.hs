@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 import Data.List (intercalate, find)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
@@ -28,6 +27,7 @@ import Peer (connectToPeer)
 import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity, name)
 import Worker (worker)
 import Args (ArgsInfo, loadArgs, inputPath, outputPath, peerCount, threadsPerPeer)
+
 initSharedState :: PieceIndex -> IO (TQueue (Maybe PieceIndex), TVar Int)
 initSharedState pieceQty = atomically $ do
     q <- newTQueue
@@ -47,7 +47,8 @@ run args = do
 
             contents <- B.hGetContents handle
             selfPid  <- getEntropy 20
-            case getTorrentFile $ fst $ parseBencodedValue contents of
+            case (getTorrentFile . fst) =<< parseBencodedValue contents  of
+                Nothing -> putStrLn "Invalid torrent file"
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf
                     putStrLn $ "Length: " ++ show (fileSize $ info tf)
@@ -86,7 +87,6 @@ run args = do
                     endTime <- getCurrentTime
 
                     putStrLn $ "Write duration: " ++ show (diffUTCTime endTime joinTime)
-                Nothing -> putStrLn "Invalid torrent file"
 
 main :: IO ()
 main = do
