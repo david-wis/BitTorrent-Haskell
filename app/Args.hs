@@ -18,7 +18,7 @@ data ArgsInfo = ArgsInfo {
 
 loadArgs :: [String] -> Maybe ArgsInfo
 loadArgs as@[_, _] = loadArgs (as ++ ["5"])
-loadArgs as@[inpPath, outPath, tPerPeer] = Just $ ArgsInfo {
+loadArgs [inpPath, outPath, tPerPeer] = Just $ ArgsInfo {
     inputPath = inpPath,
     outputPath = outPath,
     threadsPerPeer = read tPerPeer,

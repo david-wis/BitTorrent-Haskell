@@ -1,9 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}    
+{-# LANGUAGE OverloadedStrings #-}
 
 module Bencode (
-    BencodedElem (BencodedDict), 
+    BencodedElem (BencodedDict),
     parseBencodedValue,
     bReadInt,
     bReadString,
@@ -25,16 +25,15 @@ import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
 -- Warning: dict keys should always be Strings
 data BencodedElem = BencodedDict [(ByteString, BencodedElem)] | BencodedArray [BencodedElem] | BencodedString ByteString | BencodedInt Int
 
--- Make BencodedElem showable
 instance Show BencodedElem where
     show (BencodedArray elems) = show elems
     show (BencodedString s) = show s
     show (BencodedInt i) = show i
-    show (BencodedDict elems) = "{" ++ (intercalate ", " $ map (\(k, v) -> show k ++ ": " ++ show v) elems) ++ "}"
+    show (BencodedDict elems) = "{" ++ intercalate ", " (map (\(k, v) -> show k ++ ": " ++ show v) elems) ++ "}"
 
 
 parseBencodedString :: ByteString -> (BencodedElem, ByteString)
-parseBencodedString s = case B.elemIndex ':' s of 
+parseBencodedString s = case B.elemIndex ':' s of
                            Just pos -> let (sLen, sRemainingRaw) = B.splitAt pos s
                                            Just (len, _) = B.readInt sLen -- TODO: Add validations
                                            sRemaining = B.tail sRemainingRaw -- Remove ':'
@@ -45,7 +44,7 @@ parseBencodedString s = case B.elemIndex ':' s of
 parseBencodedInt :: ByteString -> (BencodedElem, ByteString)
 parseBencodedInt (uncons -> Just ('i', sNum)) = case B.readInt sNum of
                                                       Just (n, uncons -> Just ('e', sReturn)) -> (BencodedInt n, sReturn)
-                                                      Nothing -> error "Invalid Int format" 
+                                                      Nothing -> error "Invalid Int format"
 parseBencodedInt _ = error "Invalid Int format"
 
 parseBencodedListRecursive :: ByteString -> ([BencodedElem], ByteString)
@@ -71,7 +70,7 @@ parseBencodedDict (uncons -> Just ('d', sList)) = let (elems, sRemaining) = pars
 parseBencodedValue :: ByteString -> (BencodedElem, ByteString)
 -- The equivalent version with native haskell strings (instead of bytestrings) would be:
 -- parseBencodedValue cs@(c:_) = ...
-parseBencodedValue cs@(uncons -> Just (c, _)) = case c of 
+parseBencodedValue cs@(uncons -> Just (c, _)) = case c of
                                                     'l' -> parseBencodedList cs
                                                     'd' -> parseBencodedDict cs
                                                     'i' -> parseBencodedInt cs

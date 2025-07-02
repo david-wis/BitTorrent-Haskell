@@ -69,8 +69,7 @@ encodeUri bs = concatMap (('%' : ) . B.unpack) $ segmentByteString (Base16.encod
 getPeers :: String -> TrackerQueryParams -> IO TrackerResponse
 getPeers url params = do
                         let q = "info_hash=" ++ encodeUri (infoHash params) ++ "&peer_id=" ++ encodeUri (peerId params) ++ "&port=" ++ show (port params) ++ "&uploaded=" ++ show (uploaded params) ++ "&downloaded=" ++ show (downloaded params) ++ "&left=" ++ show (left params) ++ "&compact=" ++ show (compact params)
-                        rsp <- simpleHTTP $ getRequest (url ++ "?" ++ q)
-                        rawBody <- getResponseBody rsp
+                        rawBody <- simpleHTTP (getRequest (url ++ "?" ++ q)) >>= getResponseBody
                         let body = fst $ parseBencodedValue $ B.pack rawBody
                         case buildTrackerResponse body of
                             Just trsp -> return trsp

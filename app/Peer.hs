@@ -74,11 +74,6 @@ connectToPeer (Address ip port) tf selfPid callback =
     `catch` \(e :: SomeException) -> return False
       --putStrLn ("Failed to connect to peer: " ++ show e) >> return False
 
--- disconnectFromPeer :: Socket -> IO ()
--- disconnectFromPeer sock = do
---   putStrLn "Disconnecting from peer..."
---   closeSock sock
-
 
 handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO () -- TODO: Return file names instead of ByteString?
 handlePeerConnection tf selfPid callback (sock, _) = do
@@ -187,15 +182,12 @@ downloadBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           --- 
                                                           readBlock sock pieceIndex blockIndex actualBlockSize
 
-downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO (ByteString)
+downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO ByteString
 downloadPiece sock size pieceIdx pieceHash = do
                                                 let lastBlockSize = size `mod` blockSize
                                                 let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
                                                 let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize
-                                                -- TODO: Do in parallel?
-                                                -- print $ "Downloading piece. There are " ++ show blocksQty ++ " blocks"
-                                                -- print $ "Last block size: " ++ show lastBlockSize
-                                                -- downloadBlock sock pieceIdx (0 * blockSize) (getSize 0)
+                                                -- Possible improvement: pipelining
                                                 blockList <- sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1],
                                                                                                                                let actualBlockSize = getSize blockIdx,
                                                                                                                                actualBlockSize > 0]

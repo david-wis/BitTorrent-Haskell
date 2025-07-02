@@ -33,7 +33,7 @@ initSharedState pieceQty = atomically $ do
     q <- newTQueue
     mapM_ (writeTQueue q . Just) [0..pieceQty-1]
     countVar <- newTVar pieceQty
-    return (q, countVar) 
+    return (q, countVar)
 
 
 run :: ArgsInfo -> IO ()
@@ -41,7 +41,7 @@ run args = do
             handle <- openFile (inputPath args) ReadMode
             absOutPath <- makeAbsolute $ outputPath args
             pathExists <- doesDirectoryExist absOutPath
-            Control.Monad.when (not pathExists) $ do
+            unless pathExists $ do
                 putStrLn $ "Output path does not exist: " ++ absOutPath
                 exitWith (ExitFailure 1)
 
@@ -62,7 +62,7 @@ run args = do
 
                     let piecesQty = getPieceQuantity tf
                     (queue, piecesLeft) <- initSharedState piecesQty
-                    let peers = case peerCount args of 
+                    let peers = case peerCount args of
                                      Nothing -> T.peers trackerInfo
                                      (Just n) -> take n $ T.peers trackerInfo
                     putStrLn $ "Peers: " ++ show (length peers)
@@ -73,10 +73,10 @@ run args = do
                     atomically $ do
                         remaining <- readTVar piecesLeft
                         check (remaining == 0)
-                    
+
                     joinTime <- getCurrentTime
-                    putStrLn $ "download duration: " ++ (show $ diffUTCTime joinTime startTime)
-                    
+                    putStrLn $ "Download duration: " ++ show (diffUTCTime joinTime startTime)
+
                     putStrLn "All pieces downloaded, joining files..."
                     mapM_ (\i -> do
                         bs <- BS.readFile (outputFilename ++ show i ++ ".part")
