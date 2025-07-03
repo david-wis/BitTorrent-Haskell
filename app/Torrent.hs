@@ -20,7 +20,7 @@ import qualified Data.ByteString.Char8 as B
 import Crypto.Hash.SHA1 ( hash )
 import qualified Data.ByteString.Base16 as Base16
 
-import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
+import Bencode ( BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 
 data TorrentInfo = TorrentInfo {
     fileSize :: Int,

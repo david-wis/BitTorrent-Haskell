@@ -61,10 +61,3 @@ bitFieldContains bs n = let byte = bs `B.index` (n `div` 8)
                             bitPosition = 7 - (n `mod` 8)
                             mask = (1 `shiftL` bitPosition)
                             in (mask .&. fromEnum byte) /= 0
-
-whenJust :: Monad m => Maybe a -> (a -> Bool) -> (a -> m ()) -> m ()
--- whenJust Nothing _ _  = return ()
--- whenJust (Just x) p f = if p x 
---                         then f x
---                         else return ()
-whenJust mx p f = maybe (return ()) (\x -> when (p x) (f x)) mx

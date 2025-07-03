@@ -4,7 +4,7 @@
 
 module Bencode (
     BencodedElem (BencodedDict),
-    parseBencodedValue,
+    parseBencode,
     bReadInt,
     bReadString,
     bencodeToByteString,
@@ -23,7 +23,10 @@ import System.IO (hSetBuffering, stdout, stderr,  BufferMode (NoBuffering))
 
 
 -- Warning: dict keys should always be Strings
-data BencodedElem = BencodedDict [(ByteString, BencodedElem)] | BencodedArray [BencodedElem] | BencodedString ByteString | BencodedInt Int
+data BencodedElem = BencodedDict [(ByteString, BencodedElem)] 
+                    | BencodedArray [BencodedElem] 
+                    | BencodedString ByteString 
+                    | BencodedInt Int
 
 instance Show BencodedElem where
     show (BencodedArray elems) = show elems
@@ -90,6 +93,11 @@ parseBencodedValue cs@(uncons -> Just (c, _)) = case c of
                                                     'i' -> parseBencodedInt cs
                                                     _ -> if isDigit c then parseBencodedString cs
                                                          else Nothing
+parseBencodedValue _ = Nothing
+
+parseBencode :: ByteString -> Maybe BencodedElem
+parseBencode = fmap fst . parseBencodedValue
+
 
 -- TODO: See if we should use an Exception Monad instead of Maybe
 

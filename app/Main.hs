@@ -21,7 +21,7 @@ import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Control.Monad
 
 import qualified Tracker as T
-import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
+import Bencode ( parseBencode, BencodedElem(BencodedDict), bReadString, bReadInt, bencodeToByteString, bencodeGetValue)
 import Utils ( segmentByteString, PieceIndex )
 import Peer (connectToPeer)
 import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity, name)
@@ -47,7 +47,7 @@ run args = do
 
             contents <- B.hGetContents handle
             selfPid  <- getEntropy 20
-            case (getTorrentFile . fst) =<< parseBencodedValue contents  of
+            case getTorrentFile =<< parseBencode contents of
                 Nothing -> putStrLn "Invalid torrent file"
                 Just tf -> do
                     putStrLn $ "Tracker URL: " ++ announce tf

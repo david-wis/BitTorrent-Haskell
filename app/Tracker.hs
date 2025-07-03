@@ -25,7 +25,7 @@ import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
 import qualified Data.ByteString.Base16 as Base16
 
 
-import Bencode ( parseBencodedValue, BencodedElem(BencodedDict), bReadInt, bReadString, bencodeGetValue )
+import Bencode ( parseBencode, BencodedElem(BencodedDict), bReadInt, bReadString, bencodeGetValue )
 import Utils (segmentByteString, Address (Address), readBytesAsInt)
 
 data TrackerQueryParams = TrackerQueryParams {
@@ -44,8 +44,8 @@ data TrackerResponse = TrackerResponse {
     peers :: [Address]
 }
 
-instance Show TrackerResponse where
-    show trsp = "TrackerResponse { interval = " ++ show (interval trsp) ++ ", peers = " ++ show (peers trsp) ++ " }"
+-- instance Show TrackerResponse where
+--     show trsp = "TrackerResponse { interval = " ++ show (interval trsp) ++ ", peers = " ++ show (peers trsp) ++ " }"
 
 
 
@@ -61,6 +61,7 @@ buildTrackerResponse bed@(BencodedDict _) = do
                                                 bePeers <- bencodeGetValue bed "peers"
                                                 bsPeers <- bReadString bePeers
                                                 return $ TrackerResponse { interval = intInterv , peers = map parseAddress $ segmentByteString bsPeers 6 }
+buildTrackerResponse _ = Nothing
 
 -- Possible improvement: unescape unicode chars
 encodeUri :: ByteString -> String
@@ -70,7 +71,7 @@ getPeers :: String -> TrackerQueryParams -> IO TrackerResponse
 getPeers url params = do
                         let q = "info_hash=" ++ encodeUri (infoHash params) ++ "&peer_id=" ++ encodeUri (peerId params) ++ "&port=" ++ show (port params) ++ "&uploaded=" ++ show (uploaded params) ++ "&downloaded=" ++ show (downloaded params) ++ "&left=" ++ show (left params) ++ "&compact=" ++ show (compact params)
                         rawBody <- getResponseBody =<< simpleHTTP (getRequest (url ++ "?" ++ q))
-                        case (buildTrackerResponse . fst) =<< parseBencodedValue (B.pack rawBody) of
+                        case buildTrackerResponse =<< parseBencode (B.pack rawBody) of
                              Just trsp -> return trsp
                              Nothing -> error "Invalid Tracker Response"
 

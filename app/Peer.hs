@@ -98,7 +98,7 @@ handleHandshake hash selfPid sock = do
                                                 return (
                                                   if responsePrefix == handshakePrefix
                                                     then B.drop (handshakePrefixLength + reservedBytesLength + hashLength) response -- The peer ID is at the end of the response
-                                                    else error "Invalid response" -- TODO: Handle this better
+                                                    else error "Invalid response"
                                                 )
                                     Nothing -> error "No response"
 
@@ -130,14 +130,14 @@ readPeerMessage sock = do
                                               else do
                                                       payload <- readUntilLength sock (msgLen-1)
                                                       return (msgId, payload)
-                            Nothing -> error "Invalid message" -- TODO: Handle this better
+                            Nothing -> error "Invalid message"
 
 sendPeerMessage :: Socket -> ByteString -> MessageId -> IO ()
 sendPeerMessage sock payload msgId = let size = (fromIntegral $ B.length payload + 1) :: Int32
-                                     in send sock $ (LB.toStrict (Bin.encode size) `B.snoc` msgId) `B.append` payload --TODO check if payload is greater than int32? 
+                                     in send sock $ (LB.toStrict (Bin.encode size) `B.snoc` msgId) `B.append` payload
 
 -- | Fetches the BitField of the peer
-handleBitField :: Socket -> IO BitField -- TODO: Think if the available pieces should be parsed
+handleBitField :: Socket -> IO BitField
 handleBitField sock = do
                         (msgId, bitField) <- readPeerMessage sock
                         return (if msgId == bitFieldMessageId then bitField
@@ -152,9 +152,7 @@ sendInterestedMessage sock = sendPeerMessage sock B.empty interestMessageId
 -- | Waits for an unchoke message from the peer
 handleUnchoke :: Socket -> IO ()
 handleUnchoke sock = do
-                      -- putStrLn "Waiting for unchoke..."
                       (msgId, _) <- readPeerMessage sock
-                      -- putStrLn "Unchoked"
                       if msgId == unchokeMessageId
                         then return ()
                         else error "Expected BitField message"
@@ -168,9 +166,8 @@ readBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           if msgId == pieceMessageId then return block
                                                                                      else
                                                                                            do
-                                                                                             print $ "Mira que loco, otro id: " ++ show msgId
-                                                                                             readBlock sock pieceIndex blockIndex actualBlockSize -- cambiar
-                                                                                            --  return B.empty -- TODO: Handle this better
+                                                                                             -- Possible optimization: act differently when a choked is received
+                                                                                             readBlock sock pieceIndex blockIndex actualBlockSize
 
 downloadBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
 downloadBlock sock pieceIndex blockIndex actualBlockSize = do
