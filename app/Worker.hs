@@ -44,7 +44,7 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
                     if bitFieldContains bitfield pieceIndex -- Check if the peer has the piece
                     then do
                             pieceBS <- downloadPiece sock (getPieceSize piecesQty pieceSize lastPieceSize pieceIndex) pieceIndex (getPieceHash torrentFile pieceIndex)
-                                        `catch` \(e :: SomeException) -> print pieceIndex >> atomically (writeTQueue queue maybePieceIndex) >> throw e
+                                        `catch` \(e :: SomeException) -> atomically (writeTQueue queue maybePieceIndex) >> throw e
 
                             BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
                             atomically $ modifyTVar piecesLeft (\x -> x-1)

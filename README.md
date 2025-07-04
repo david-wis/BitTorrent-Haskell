@@ -1,23 +1,39 @@
-[![progress-banner](https://backend.codecrafters.io/progress/bittorrent/fe5b9f7c-8dc1-4086-8b8d-e3f83f4285f4)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
-
 Inspired by 
 ["Build Your Own BitTorrent" Challenge](https://app.codecrafters.io/courses/bittorrent/overview).
 
-BitTorrent client that's capable of parsing a
-.torrent file and downloading a file from a peer. Along the way, we’ll learn
-about how torrent files are structured, HTTP trackers, BitTorrent’s Peer
-Protocol, pipelining and more.
+# Run with stack
+```
+stack run <file> <output_dir> <threads_per_peer> [<max_peers>]
+```
+Where:
+- file: path to the .torrent file
+- output_dir: path to the directory where the .part files and the final file will be downloaded
+- thread_per_peer: max amount of threads used for each peer that answers the handshake correctly
+- max_peers (optional): limits the peer list to a specific length
+
+# Example
+```sh
+stack run file.torrent tests 100
+```
 
 
 # Run with Docker
+Warning: 5gb image 
 ```sh
 docker build -t hs-bittorrent .
 ```
 
 ```sh
-docker run --rm -v "$(pwd)/app:/bittorrent/app" hs-bittorrent decode 6:lambda
+docker run --rm -v "$(pwd)/app:/bittorrent/app" -v "$(pwd):/bittorrent/tests" hs-bittorrent <file> <output_dir> <threads_per_peer> [<max_peers>]
 ```
 
+To watch the parts creation
+```
+watch 'ls <selected output directory> | wc'
+```
+
+
+## Example
 ```sh
-docker run --rm -v "$(pwd)/app:/bittorrent/app" -v "$(pwd):/bittorrent/tests" hs-bittorrent info /bittorrent/tests/sample.torrent
+docker run --rm -v "$(pwd)/app:/bittorrent/app" -v "$(pwd):/bittorrent/tests" hs-bittorrent /bittorrent/tests/file.torrent /bittorrent/tests 100
 ```
