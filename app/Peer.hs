@@ -97,8 +97,8 @@ handleHandshake hash selfPid sock = do
                                                 let responsePrefix = B.take handshakePrefixLength response in -- \19BitTorrent protocol
                                                 return (
                                                   if responsePrefix == handshakePrefix
-                                                    then B.drop (handshakePrefixLength + reservedBytesLength + hashLength) response -- The peer ID is at the end of the response
-                                                    else error "Invalid response"
+                                                  then B.drop (handshakePrefixLength + reservedBytesLength + hashLength) response -- The peer ID is at the end of the response
+                                                  else error "Invalid response"
                                                 )
                                     Nothing -> error "No response"
 
@@ -109,10 +109,11 @@ readUntilLength sock n = do
                             case maybeRsp of
                               Just rsp -> let rspLen = B.length rsp
                                               remainingLen = n - rspLen
-                                          in if remainingLen > 0 then do
-                                                                        remaining <- readUntilLength sock remainingLen
-                                                                        return (rsp `B.append` remaining)
-                                                             else return rsp
+                                          in if remainingLen > 0 
+                                             then do
+                                                    remaining <- readUntilLength sock remainingLen
+                                                    return (rsp `B.append` remaining)
+                                             else return rsp
                               Nothing -> error "Failure reading from socket"
 
 
@@ -126,10 +127,10 @@ readPeerMessage sock = do
                                           -- putStrLn $ "MsgLen: " ++ show msgLen
                                           let msgId = B.head msgIdBs -- Convert to Char
                                           if msgLen == 1
-                                              then return (msgId, B.empty)
-                                              else do
-                                                      payload <- readUntilLength sock (msgLen-1)
-                                                      return (msgId, payload)
+                                          then return (msgId, B.empty)
+                                          else do
+                                                  payload <- readUntilLength sock (msgLen-1)
+                                                  return (msgId, payload)
                             Nothing -> error "Invalid message"
 
 sendPeerMessage :: Socket -> ByteString -> MessageId -> IO ()
@@ -154,8 +155,8 @@ handleUnchoke :: Socket -> IO ()
 handleUnchoke sock = do
                       (msgId, _) <- readPeerMessage sock
                       if msgId == unchokeMessageId
-                        then return ()
-                        else error "Expected BitField message"
+                      then return ()
+                      else error "Expected BitField message"
 
 -- 
 readBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
@@ -163,11 +164,10 @@ readBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           (msgId, payload) <- readPeerMessage sock
                                                           let block = B.drop (2*4) payload -- The payload consists of index, begin, block
                                                           -- print $ "Read bytes: " ++ (show $ B.length block)
-                                                          if msgId == pieceMessageId then return block
-                                                                                     else
-                                                                                           do
-                                                                                             -- Possible optimization: act differently when a choked is received
-                                                                                             readBlock sock pieceIndex blockIndex actualBlockSize
+                                                          if msgId == pieceMessageId  -- Possible optimization: act differently when a choked is received
+                                                          then return block
+                                                          else readBlock sock pieceIndex blockIndex actualBlockSize
+                                                          
 
 downloadBlock :: Socket -> PieceIndex -> BlockIndex -> Int -> IO ByteString
 downloadBlock sock pieceIndex blockIndex actualBlockSize = do
@@ -191,8 +191,8 @@ downloadPiece sock size pieceIdx pieceHash = do
                                                 let result = B.concat blockList
                                                 let calculatedHash = hash result
                                                 if calculatedHash /= pieceHash
-                                                  then do
+                                                then do
                                                         print $ "calculated: " ++ B.unpack calculatedHash  ++ " , expected: " ++ B.unpack pieceHash
                                                         error "Hash does not match"
                                                         -- return result
-                                                  else return result
+                                                else return result

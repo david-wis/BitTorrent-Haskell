@@ -1,6 +1,5 @@
 
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Args(
     ArgsInfo(..),

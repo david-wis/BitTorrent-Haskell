@@ -11,7 +11,6 @@ module Bencode (
     bencodeGetValue
 ) where
 
-import Data.Aeson
 import Data.List (intercalate, find)
 import Data.ByteString.Char8 (ByteString, uncons, unsnoc, cons, snoc)
 import Data.Char (isDigit)
