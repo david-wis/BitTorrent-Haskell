@@ -31,8 +31,9 @@ getPieceHash :: TorrentFile -> Int -> ByteString
 getPieceHash torrentFile idx =
     B.take 20 $ B.drop (20 * idx) $ pieces $ info torrentFile
 
-loopWorker :: TQueue (Maybe PieceIndex) -> TVar Int -> Path -> TorrentFile -> BitField -> Socket -> IO ()
-loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
+loopWorker :: TQueue (Maybe PieceIndex) -> TVar Int -> Path -> TorrentFile -> Int -> BitField -> Socket -> IO ()
+loopWorker queue piecesLeft outputFilename torrentFile 0 bitfield sock = return ()
+loopWorker queue piecesLeft outputFilename torrentFile time bitfield sock =
     do
         remaining <- readTVarIO piecesLeft
         if remaining > 0
@@ -43,15 +44,19 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
                     -- putStrLn $ "Bitfield: " ++ (B.unpack $ B16.encode bitfield)
                     if bitFieldContains bitfield pieceIndex -- Check if the peer has the piece
                     then do
-                            pieceBS <- downloadPiece sock (getPieceSize piecesQty pieceSize lastPieceSize pieceIndex) pieceIndex (getPieceHash torrentFile pieceIndex)
-                                        `catch` \(e :: SomeException) -> atomically (writeTQueue queue maybePieceIndex) >> throw e
-
-                            BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
-                            atomically $ modifyTVar piecesLeft (\x -> x-1)
+                            maybePieceBS <- downloadPiece sock (getPieceSize piecesQty pieceSize lastPieceSize pieceIndex) pieceIndex (getPieceHash torrentFile pieceIndex) time
+                                            `catch` \(e :: SomeException) -> return Nothing
+                            case maybePieceBS of
+                                Nothing -> do
+                                    atomically $ writeTQueue queue maybePieceIndex
+                                    loopWorker queue piecesLeft outputFilename torrentFile (time `div` 2) bitfield sock 
+                                Just pieceBS -> do
+                                    BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
+                                    atomically $ modifyTVar piecesLeft (\x -> x-1)
                     else do
                         putStrLn $ "@peer does not have piece " ++ show pieceIndex
                         atomically $ writeTQueue queue maybePieceIndex
-                    loopWorker queue piecesLeft outputFilename torrentFile bitfield sock
+                    loopWorker queue piecesLeft outputFilename torrentFile (min (time+1) 100) bitfield sock 
                 ) maybePieceIndex
 
         else atomically $ writeTQueue queue Nothing
@@ -67,5 +72,5 @@ worker queue piecesLeft outputFileNime tPerPeer torrentFile peerId addr =
     do
         success <- connectToPeer addr torrentFile peerId (\_ _ -> return ())
         when success $ replicateConcurrently_ tPerPeer $ do
-            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFileNime torrentFile)
+            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFileNime torrentFile 60)
             return ()

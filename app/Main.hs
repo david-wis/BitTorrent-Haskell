@@ -87,6 +87,7 @@ run args = do
                     startTime <- getCurrentTime
                     mapConcurrently_ (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid) peers
 
+                    putStrLn "All threads have finished"
                     atomically $ do 
                         remaining <- readTVar piecesLeft
                         check (remaining == 0)

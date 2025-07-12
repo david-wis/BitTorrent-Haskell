@@ -28,6 +28,7 @@ import qualified Data.Binary as Bin
 import Crypto.Hash.SHA1 ( hash )
 import System.IO
 import Control.Exception (finally, catch, SomeException)
+import System.Timeout (timeout)
 
 import Torrent (TorrentFile,  infoHash, pieceLength, info, pieces, fileSize, hashLength)
 type MessageId = Char
@@ -72,7 +73,6 @@ connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO (
 connectToPeer (Address ip port) tf selfPid callback =
   (connect ip port (handlePeerConnection tf selfPid callback) >> return True)
     `catch` \(e :: SomeException) -> return False
-      --putStrLn ("Failed to connect to peer: " ++ show e) >> return False
 
 
 handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO () -- TODO: Return file names instead of ByteString?
@@ -84,7 +84,6 @@ handlePeerConnection tf selfPid callback (sock, _) = do
                                                     handleUnchoke sock
                                                     -- downloadFile sock tf 
                                                     callback bitField sock
-
 
 -- | Handles the handshake with the peer, sending the info hash and receiving the peer ID
 handleHandshake :: Hash -> PeerId -> Socket -> IO PeerId
@@ -179,20 +178,17 @@ downloadBlock sock pieceIndex blockIndex actualBlockSize = do
                                                           --- 
                                                           readBlock sock pieceIndex blockIndex actualBlockSize
 
-downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> IO ByteString
-downloadPiece sock size pieceIdx pieceHash = do
-                                                let lastBlockSize = size `mod` blockSize
-                                                let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
-                                                let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize
-                                                -- Possible improvement: pipelining
-                                                blockList <- sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1],
-                                                                                                                               let actualBlockSize = getSize blockIdx,
-                                                                                                                               actualBlockSize > 0]
-                                                let result = B.concat blockList
-                                                let calculatedHash = hash result
-                                                if calculatedHash /= pieceHash
-                                                then do
-                                                        print $ "calculated: " ++ B.unpack calculatedHash  ++ " , expected: " ++ B.unpack pieceHash
-                                                        error "Hash does not match"
-                                                        -- return result
-                                                else return result
+downloadPiece :: Socket -> Int -> PieceIndex -> ByteString -> Int -> IO (Maybe ByteString)
+downloadPiece sock size pieceIdx pieceHash time = do
+                                                        let lastBlockSize = size `mod` blockSize
+                                                        let blocksQty = size `div` blockSize + if lastBlockSize > 0 then 1 else 0
+                                                        let getSize idx = if idx /= blocksQty-1 || lastBlockSize == 0 then blockSize else lastBlockSize
+                                                        -- Possible improvement: pipelining
+                                                        maybeBlockList <- timeout (time * 1000000) $ sequence [ downloadBlock sock pieceIdx blockIdx actualBlockSize | blockIdx <- [0..blocksQty-1],
+                                                                                                                                      let actualBlockSize = getSize blockIdx,
+                                                                                                                                      actualBlockSize > 0]
+                                                        return $ (\blockList -> 
+                                                                        let result = B.concat blockList
+                                                                        in if hash result /= pieceHash 
+                                                                           then error "Hash does not match"
+                                                                           else Just result) =<< maybeBlockList
