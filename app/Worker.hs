@@ -6,7 +6,7 @@ module Worker (
 ) where
 
 import Data.Maybe (isJust)
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Concurrent.STM (TQueue, TVar, readTQueue, writeTQueue, readTVarIO, modifyTVar)
 import Control.Concurrent.Async ( replicateConcurrently_ )
 import Control.Monad.STM ( atomically )
@@ -66,6 +66,7 @@ worker :: TQueue (Maybe PieceIndex) -> TVar Int -> Path -> Int -> TorrentFile ->
 worker queue piecesLeft outputFileNime tPerPeer torrentFile peerId addr =
     do
         success <- connectToPeer addr torrentFile peerId (\_ _ -> return ())
-        when success $ replicateConcurrently_ tPerPeer $ do
-            connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFileNime torrentFile)
-            return ()
+        when success $ replicateConcurrently_ tPerPeer $ retryConnection False
+    where retryConnection succeded = unless succeded $ do 
+                                                    succeded' <- connectToPeer addr torrentFile peerId (loopWorker queue piecesLeft outputFileNime torrentFile)
+                                                    retryConnection succeded'
