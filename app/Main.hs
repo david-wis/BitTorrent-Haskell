@@ -12,7 +12,7 @@ import qualified Data.ByteString.Base16 as Base16
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Control.Concurrent.STM (TQueue, TVar, newTQueue, newTVar, readTVarIO, readTVar, writeTQueue, readTQueue)
 import Control.Monad.STM ( atomically, check )
-import Control.Concurrent.Async ( mapConcurrently_)
+import Control.Concurrent.Async ( mapConcurrently_, concurrently_ )
 import qualified Data.ByteString as BS
 import System.Entropy (getEntropy)
 import System.Directory (removeFile, doesDirectoryExist, makeAbsolute)
@@ -25,7 +25,7 @@ import Bencode ( parseBencode, BencodedElem(BencodedDict), bReadString, bReadInt
 import Utils ( segmentByteString, PieceIndex )
 import Peer (connectToPeer)
 import Torrent (getTorrentFile, torrentFileToHexHash, announce, infoHash, pieces, info, fileSize, pieceLength, getPieceQuantity, name)
-import Worker (worker)
+import Worker (downloaderWorker, joinerWorker)
 import Args (ArgsInfo, loadArgs, inputPath, outputPath, peerCount, threadsPerPeer)
 
 import Control.Concurrent (forkIO, threadDelay)
@@ -84,25 +84,13 @@ run args = do
 
                     startProgressReporter piecesLeft piecesQty
 
-                    startTime <- getCurrentTime
-                    mapConcurrently_ (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid) peers
-
-                    atomically $ do 
-                        remaining <- readTVar piecesLeft
-                        check (remaining == 0)
-
-                    joinTime <- getCurrentTime
-                    putStrLn $ "Download duration: " ++ show (diffUTCTime joinTime startTime)
-
-                    putStrLn "All pieces downloaded, joining files..."
-                    mapM_ (\i -> do
-                        bs <- BS.readFile (outputFilename ++ show i ++ ".part")
-                        removeFile (outputFilename ++ show i ++ ".part")
-                        BS.appendFile outputFilename bs) [0..piecesQty-1]
-                    putStrLn $ "Files joined successfully. File saved as: " ++ outputFilename
-                    endTime <- getCurrentTime
-
-                    putStrLn $ "Write duration: " ++ show (diffUTCTime endTime joinTime)
+                    concurrently_ (joinerWorker piecesLeft piecesQty outputFilename)
+                                  (mapConcurrently_ (downloaderWorker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid) peers)
+                    endPiecesLeft <- readTVarIO piecesLeft
+                    when (endPiecesLeft /= 0) $ do
+                        putStrLn $ "Error: Ended with " ++ show endPiecesLeft ++ " pieces!"
+                        exitWith (ExitFailure 1)
+                    
 
 main :: IO ()
 main = do
