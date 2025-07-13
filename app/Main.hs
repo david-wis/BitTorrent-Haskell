@@ -85,7 +85,7 @@ run args = do
                     startProgressReporter piecesLeft piecesQty
 
                     startTime <- getCurrentTime
-                    asyncs <- forM peers $ \peer ->
+                    forM_ peers $ \peer ->
                         async (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid peer)
                     
                     putStrLn "Waiting for workers to finish..."
