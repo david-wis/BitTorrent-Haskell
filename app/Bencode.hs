@@ -98,8 +98,6 @@ parseBencode :: ByteString -> Maybe BencodedElem
 parseBencode = fmap fst . parseBencodedValue
 
 
--- TODO: See if we should use an Exception Monad instead of Maybe
-
 bReadString :: BencodedElem -> Maybe ByteString
 bReadString (BencodedString s) = Just s
 bReadString _ = Nothing

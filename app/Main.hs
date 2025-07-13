@@ -12,7 +12,7 @@ import qualified Data.ByteString.Base16 as Base16
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Control.Concurrent.STM (TQueue, TVar, newTQueue, newTVar, readTVarIO, readTVar, writeTQueue, readTQueue)
 import Control.Monad.STM ( atomically, check )
-import Control.Concurrent.Async ( mapConcurrently_)
+import Control.Concurrent.Async ( async )
 import qualified Data.ByteString as BS
 import System.Entropy (getEntropy)
 import System.Directory (removeFile, doesDirectoryExist, makeAbsolute)
@@ -85,7 +85,10 @@ run args = do
                     startProgressReporter piecesLeft piecesQty
 
                     startTime <- getCurrentTime
-                    mapConcurrently_ (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid) peers
+                    asyncs <- forM peers $ \peer ->
+                        async (worker queue piecesLeft outputFilename (threadsPerPeer args) tf selfPid peer)
+                    
+                    putStrLn "Waiting for workers to finish..."
 
                     atomically $ do 
                         remaining <- readTVar piecesLeft

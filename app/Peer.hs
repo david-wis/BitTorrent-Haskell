@@ -23,7 +23,7 @@ import Utils ( Address(Address),
       PieceIndex,
       BlockIndex )
 import Network.Simple.TCP (connect, connectSock, closeSock, Socket, SockAddr, send, recv)
-import qualified Data.ByteString.Base16 as B16 -- TODO: Use with qualified
+import qualified Data.ByteString.Base16 as B16
 import qualified Data.Binary as Bin
 import Crypto.Hash.SHA1 ( hash )
 import System.IO
@@ -72,17 +72,14 @@ connectToPeer :: Address -> TorrentFile -> PeerId -> (BitField -> Socket -> IO (
 connectToPeer (Address ip port) tf selfPid callback =
   (connect ip port (handlePeerConnection tf selfPid callback) >> return True)
     `catch` \(e :: SomeException) -> return False
-      --putStrLn ("Failed to connect to peer: " ++ show e) >> return False
 
 
-handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO () -- TODO: Return file names instead of ByteString?
+handlePeerConnection :: TorrentFile -> PeerId -> (BitField -> Socket -> IO ()) -> (Socket, SockAddr) -> IO ()
 handlePeerConnection tf selfPid callback (sock, _) = do
                                                     peerId <- handleHandshake (infoHash tf) selfPid sock
-                                                    -- putStrLn $ "Connection successful to peer with pid: " ++ B.unpack (B16.encode peerId)
                                                     bitField <- handleBitField sock
                                                     sendInterestedMessage sock
                                                     handleUnchoke sock
-                                                    -- downloadFile sock tf 
                                                     callback bitField sock
 
 
@@ -123,8 +120,6 @@ readPeerMessage sock = do
                           case maybeRsp of
                             Just bs ->  do
                                           let (msgLen, msgIdBs) = readBytesAsInt bs 4
-                                          -- print $ "Response: " ++ B.unpack (bs)
-                                          -- putStrLn $ "MsgLen: " ++ show msgLen
                                           let msgId = B.head msgIdBs -- Convert to Char
                                           if msgLen == 1
                                           then return (msgId, B.empty)
@@ -194,5 +189,4 @@ downloadPiece sock size pieceIdx pieceHash = do
                                                 then do
                                                         print $ "calculated: " ++ B.unpack calculatedHash  ++ " , expected: " ++ B.unpack pieceHash
                                                         error "Hash does not match"
-                                                        -- return result
                                                 else return result
