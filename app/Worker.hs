@@ -40,7 +40,7 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
         if remaining > 0
         then do
             maybePieceIndex <- atomically $ readTQueue queue
-            maybe (return ()) (\pieceIndex ->
+            maybe (atomically $ writeTQueue queue Nothing) (\pieceIndex ->
                 do
                     -- putStrLn $ "Bitfield: " ++ (B.unpack $ B16.encode bitfield)
                     if bitFieldContains bitfield pieceIndex -- Check if the peer has the piece
@@ -49,7 +49,10 @@ loopWorker queue piecesLeft outputFilename torrentFile bitfield sock =
                                         `catch` \(e :: SomeException) -> atomically (writeTQueue queue maybePieceIndex) >> print e >> throw e
 
                             BS.writeFile (outputFilename ++ show pieceIndex ++ ".part") pieceBS
-                            atomically $ modifyTVar piecesLeft (\x -> x-1)
+                            numPiecesLeft <- atomically $ modifyTVar piecesLeft (\x -> x-1) >> readTVar piecesLeft
+                            when (numPiecesLeft == 0) do
+                                putStrLn "Downloaded last piece"
+                                atomically $ writeTQueue queue Nothing
                     else do
                         putStrLn $ "@peer does not have piece " ++ show pieceIndex
                         atomically $ writeTQueue queue maybePieceIndex
